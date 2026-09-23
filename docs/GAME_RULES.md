@@ -78,3 +78,6 @@ If you guess and do not accuse, the turn passes to your opponent.
 - A player who leaves mid-round stalls it. The host can end the series.
   No turn timers in this version.
 - No reconnect-to-seat logic beyond what signing back in provides.
+- Two actions arriving at the same instant on one round are not
+  transactional; the later write can overwrite the earlier. Play is
+  turn-based, so this is unlikely.
