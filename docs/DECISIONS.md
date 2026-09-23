@@ -83,6 +83,11 @@ R27. The 12 settings are locked in docs/SETTINGS.md (Nate's ideas,
     no dimensional-double twist; mermaids ambiguous; "In the Tall
     Grass" kept; setting 12 as adjusted (stowaway suspects, robot
     victim). (Nate)
+R28. GitHub is alibi's source authority (DeepSpace latches the source
+    permanently on first deploy; a GitHub remote must exist first). The
+    repo is public on Nate's personal account, commits use his GitHub
+    noreply email, and the CLI uses a fine-grained token scoped to the
+    alibi repo only. (Nate)
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
