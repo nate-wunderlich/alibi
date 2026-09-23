@@ -38,20 +38,30 @@ export function CardView({
   if (!card) return <div className={cn('h-14 animate-pulse rounded-sm bg-muted', className)} {...props} />
   return (
     <div className={cn('flex gap-3 rounded-sm border border-border bg-card p-3', className)} {...props}>
-      {card.kind === 'suspect' && (
-        <div
-          aria-hidden
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm border border-border bg-muted font-display text-lg font-bold text-muted-foreground"
-        >
-          {initials(card.name)}
-        </div>
-      )}
+      {card.kind === 'suspect' && <SuspectFace card={card} size={detailed ? 'h-16 w-16' : 'h-12 w-12'} />}
       <div className="min-w-0 flex-1">
         <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{KIND_LABEL[card.kind]}</div>
         <div className="font-semibold leading-snug text-foreground">{card.name}</div>
         {detailed && <p className="mt-0.5 text-sm text-muted-foreground">{card.description}</p>}
         {note && <div className="mt-1 text-xs text-primary">{note}</div>}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A suspect's portrait (R35) once the background job has painted it, or the
+ * stamped initials until then. Both fill the same fixed box, so nothing on the
+ * page moves when the picture arrives.
+ */
+function SuspectFace({ card, size }: { card: Card; size: string }) {
+  const box = cn('shrink-0 overflow-hidden rounded-sm border border-border bg-muted', size)
+  if (card.imageUrl) {
+    return <img src={card.imageUrl} loading="lazy" alt={card.name} className={cn(box, 'object-cover')} />
+  }
+  return (
+    <div aria-hidden className={cn(box, 'flex items-center justify-center font-display text-lg font-bold text-muted-foreground')}>
+      {initials(card.name)}
     </div>
   )
 }

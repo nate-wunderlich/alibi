@@ -184,7 +184,7 @@ const submitAnswers = action(async ({ userId, params, tools }) => {
 })
 
 /** startSeries({ gameId }): the host starts round 1 once a guest has joined and both have answered. */
-const startSeries = action(async ({ userId, params, tools }) => {
+const startSeries = action(async ({ userId, params, tools, env }) => {
   const game = await loadGame(tools, textParam(params, 'gameId'))
   if (game.host !== userId) refuse('Only the host can start the series.')
   if (game.guest === '') refuse('Wait for your opponent to join.')
@@ -192,7 +192,7 @@ const startSeries = action(async ({ userId, params, tools }) => {
 
   const round1 = await findRound(tools, game.id, 1)
   if (!round1) throw new Error('Round 1 was never prepared.')
-  await openRound(tools, game, round1.recordId)
+  await openRound(tools, env, game, round1.recordId)
   return { gameId: game.id, roundId: round1.recordId }
 })
 
@@ -201,7 +201,7 @@ const startSeries = action(async ({ userId, params, tools }) => {
  * is revealed, while nobody has won the series, and once both players have
  * answered its questions (it was prepared at the reveal).
  */
-const nextRound = action(async ({ userId, params, tools }) => {
+const nextRound = action(async ({ userId, params, tools, env }) => {
   const game = await loadGame(tools, textParam(params, 'gameId'))
   if (game.host !== userId) refuse('Only the host can start the next round.')
   if (game.status === 'finished') refuse('The series is over.')
@@ -212,7 +212,7 @@ const nextRound = action(async ({ userId, params, tools }) => {
   const next = await findRound(tools, game.id, game.currentRound + 1)
   if (!next) refuse('The next case is not ready yet.')
 
-  await openRound(tools, game, next.recordId)
+  await openRound(tools, env, game, next.recordId)
   return { gameId: game.id, roundId: next.recordId }
 })
 

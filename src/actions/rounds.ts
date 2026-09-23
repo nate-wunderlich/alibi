@@ -12,12 +12,14 @@
  * deals the envelope only after the case exists.
  */
 
-import type { ActionTools } from 'deepspace/worker'
+import { enqueueJob, type ActionTools } from 'deepspace/worker'
+import type { Env } from '../../worker'
 import { buildCasePrompt, buildQuestionPrompt, validateCase, type AnsweredQuestion } from '../game/caseGen'
 import { PRESET_CASE, type PresetCase } from '../game/presetCase'
 import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet } from '../game/questions'
 import { deal, starterForRound, type Card, type Player } from '../game/rules'
 import { pickSetting, SETTINGS } from '../game/settings'
+import { portraitsEnabled } from '../server/portraits'
 import { askForJson } from './ai'
 import { loadRound, must, refuse, userInSeat, type Game } from './helpers'
 
@@ -144,9 +146,10 @@ async function writeCase(tools: ActionTools, game: Game, settingId: string, numb
  * Open a prepared round once both players have answered: write the case,
  * lay out the cards, deal, and start play. While the AI writes, the round is
  * 'generating' so both screens can say so; if anything fails, it goes back
- * to 'answering' so the host can try again.
+ * to 'answering' so the host can try again. Once the round is playing, the
+ * portraits job is queued (production builds only; R35).
  */
-export async function openRound(tools: ActionTools, game: Game, roundId: string): Promise<void> {
+export async function openRound(tools: ActionTools, env: Env, game: Game, roundId: string): Promise<void> {
   const round = await loadRound(tools, roundId)
   if (round.status === 'generating') refuse('The case is already being written.')
   if (round.status !== 'answering') refuse('This case has already started.')
@@ -161,6 +164,22 @@ export async function openRound(tools: ActionTools, game: Game, roundId: string)
   } catch (e) {
     await tools.update('rounds', roundId, { status: 'answering' })
     throw e
+  }
+  if (portraitsEnabled()) await queuePortraits(env, game, roundId)
+}
+
+/**
+ * Queue the round's portraits job (R35), acting as the host. Play never
+ * waits for portraits, so a failure here is logged and otherwise ignored.
+ */
+async function queuePortraits(env: Env, game: Game, roundId: string): Promise<void> {
+  try {
+    await enqueueJob(env.JOB_ROOMS, `app:${env.DEEPSPACE_APP_ID}`, 'portraits', { roundId }, {
+      enqueuedBy: game.host,
+      maxAttempts: 2,
+    })
+  } catch (e) {
+    console.warn(`[portraits] could not queue round ${roundId}: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 

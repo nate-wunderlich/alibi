@@ -39,12 +39,30 @@
  *   }
  */
 
-import type { Job, JobContext } from 'deepspace/worker'
+import { buildCronContext, type Job, type JobContext } from 'deepspace/worker'
+import type { Env } from '../worker'
+import { uploadMedia } from './server/media'
+import { runPortraits } from './server/portraits'
 
-export async function runJob(
-  _job: Job,
-  _ctx: JobContext,
-  _env: unknown,
-): Promise<void> {
-  // No-op — implement your job handlers here. Dispatch on `_job.type`.
+export async function runJob(job: Job, _ctx: JobContext, env: Env): Promise<unknown> {
+  switch (job.type) {
+    // R35: paint the round's suspect portraits. Records are read and written
+    // through the cron context bound to the app's own record room (its default
+    // room, 'default', is one the app never reads; FRICTION 8), acting as the host.
+    case 'portraits': {
+      const hostId = String(job.enqueuedBy ?? '')
+      const ctx = buildCronContext(env, hostId, `app:${env.DEEPSPACE_APP_ID}`)
+      const { roundId } = job.payload as { roundId: string }
+      return runPortraits(
+        {
+          records: ctx.records,
+          integrations: ctx.integrations,
+          upload: (userId, file) => uploadMedia(env, userId, file),
+        },
+        { roundId, hostId },
+      )
+    }
+    default:
+      throw new Error(`Unknown job type: ${job.type}`)
+  }
 }
