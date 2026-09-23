@@ -15,10 +15,9 @@ export interface NavItem {
   devOnly?: boolean
 }
 
+// alibi has one place to go: the wordmark links home (/home), and a game
+// lives at /game/:id. /settings (in the account menu) and /api-status still
+// exist but stay out of the main nav.
 export const nav: NavItem[] = [
-  { path: '/home', label: 'Home' },
-  { path: '/settings', label: 'Settings' },
-  // The /api-status debug page still exists — add
-  // `{ path: '/api-status', label: 'API Status', devOnly: true }` to surface it.
   // ── Features add nav items below this line ──
 ]

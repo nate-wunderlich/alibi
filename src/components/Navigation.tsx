@@ -11,7 +11,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
-import { ChevronDown, LogOut, Menu, X } from 'lucide-react'
+import { ChevronDown, LogOut, Menu, Settings, X } from 'lucide-react'
 import { APP_NAME } from '../constants'
 import type { Role } from '../constants'
 import { nav } from '../nav'
@@ -70,8 +70,8 @@ export default function Navigation() {
   return (
     <>
       <nav data-testid="app-navigation" className="border-b border-border bg-background">
-        <div className="mx-auto flex h-12 max-w-7xl items-center gap-4 px-4">
-          <Link to="/home" className="text-sm font-semibold text-foreground">
+        <div className="mx-auto flex h-12 max-w-[480px] items-center gap-4 px-4 md:max-w-3xl">
+          <Link to="/home" className="font-display text-xl font-bold tracking-tight text-foreground">
             {APP_NAME}
           </Link>
 
@@ -126,6 +126,10 @@ export default function Navigation() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem render={<Link to="/settings" />}>
+                  <Settings aria-hidden />
+                  Settings
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => signOut()}>
                   <LogOut aria-hidden />
                   Sign out
@@ -142,14 +146,16 @@ export default function Navigation() {
             </button>
           )}
 
-          <button
-            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground md:hidden"
-            onClick={() => setMobileMenuOpen((prev) => !prev)}
-            aria-label="Toggle menu"
-            aria-expanded={mobileMenuOpen}
-          >
-            {mobileMenuOpen ? <X className="h-4 w-4" aria-hidden /> : <Menu className="h-4 w-4" aria-hidden />}
-          </button>
+          {visibleNav.length > 0 && (
+            <button
+              className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-foreground md:hidden"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label="Toggle menu"
+              aria-expanded={mobileMenuOpen}
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" aria-hidden /> : <Menu className="h-4 w-4" aria-hidden />}
+            </button>
+          )}
         </div>
 
         {mobileMenuOpen && (

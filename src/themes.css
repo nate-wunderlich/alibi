@@ -44,3 +44,56 @@
   --color-shell: #fafafa;
   --color-shell-panel: #ffffff;
 }
+
+/*
+ * Casefile — alibi's theme. A dark evidence desk after hours: warm
+ * near-black, aged-paper text, and one accent, the red of an evidence stamp.
+ * Sharp corners (small radius) because case files are paper, not pills.
+ * Headings: Fraunces (a serif with warmth, for case titles and the wordmark).
+ * Body: Source Sans 3 (disappears so the clues can be read).
+ * Mono: IBM Plex Mono, only for join codes and file labels.
+ */
+[data-theme="casefile"] {
+  color-scheme: dark;
+  --color-background: #14120f;
+  --color-foreground: #ece4d4;
+  --color-card: #1d1a16;
+  --color-card-foreground: #ece4d4;
+  --color-popover: #221f1a;
+  --color-popover-foreground: #ece4d4;
+  --color-primary: #c8553d;
+  --color-primary-foreground: #fbf5ea;
+  --color-secondary: #26221c;
+  --color-secondary-foreground: #ece4d4;
+  --color-muted: #26221c;
+  --color-muted-foreground: #a39a8a;
+  --color-accent: #2e2922;
+  --color-accent-foreground: #ece4d4;
+  --color-destructive: #b3261e;
+  --color-destructive-foreground: #fbf5ea;
+  --color-border: #3a342b;
+  --color-input: #3a342b;
+  --color-ring: #c8553d;
+  --radius: 0.25rem;
+  --shadow-card: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-card-hover: 0 2px 8px 0 rgba(0, 0, 0, 0.4);
+  --color-shell: #14120f;
+  --color-shell-panel: #1d1a16;
+}
+
+[data-theme="casefile"] body {
+  font-family: 'Source Sans 3', 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+}
+
+/* The landing's sealed-envelope stamp settles in once. Off for reduced motion. */
+@keyframes stamp-settle {
+  from { opacity: 0; scale: 1.6; }
+  to { opacity: 1; scale: 1; }
+}
+.stamp-settle {
+  animation: stamp-settle 600ms ease-out 400ms both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stamp-settle { animation: none; }
+}

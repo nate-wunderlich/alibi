@@ -18,6 +18,11 @@
 
 export const THEMES = [
   {
+    id: 'casefile',
+    label: 'Casefile',
+    description: "alibi's theme: a dark evidence desk, aged-paper text, one stamp-red accent.",
+  },
+  {
     id: 'slate',
     label: 'Slate',
     description: 'Neutral dark placeholder default. Replace with your own theme.',
@@ -33,9 +38,9 @@ export type ThemeId = (typeof THEMES)[number]['id']
 
 /** Read the currently active theme id from <html data-theme>. */
 export function getActiveTheme(): ThemeId {
-  if (typeof document === 'undefined') return 'slate'
+  if (typeof document === 'undefined') return 'casefile'
   const id = document.documentElement.getAttribute('data-theme') as ThemeId | null
-  return id ?? 'slate'
+  return id ?? 'casefile'
 }
 
 /** Look up a theme entry by id, or fall back to the first theme. */

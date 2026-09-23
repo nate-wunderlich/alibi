@@ -39,6 +39,11 @@
   --color-ring: #818cf8;
   --radius: 0.5rem;
 
+  /* Type roles (fonts loaded in index.html): headings and wordmark, and
+   * mono for join codes and file labels. Used as font-display / font-mono. */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
   /*
    * Map the rounded-* utilities onto --radius so a theme (or you) can change
    * the app's shape language in one place. At the default 0.5rem these equal
