@@ -17,6 +17,36 @@ export const NARRATION_MAX = 600
 export const TITLE_MAX = 80
 export const VICTIM_MAX = 120
 
+/**
+ * The tone guard: text a party mystery should not contain. A case with any
+ * of these, anywhere in its text, fails validation (then the AI retries once,
+ * then the preset case is used). Matched case-insensitively and inside longer
+ * words ("decapitat" also catches "decapitated"), so the list may also catch
+ * the odd harmless word; a retry is cheap.
+ */
+export const GRAPHIC_TERMS = [
+  'blood',
+  'bloody',
+  'gore',
+  'gory',
+  'maul',
+  'mauling',
+  'dismember',
+  'decapitat',
+  'disembowel',
+  'torture',
+  'mutilat',
+  'incision',
+  'severed head',
+  'corpse',
+]
+
+/** The first graphic term in a text, or null. */
+function graphicTermIn(text: string): string | null {
+  const lower = text.toLowerCase()
+  return GRAPHIC_TERMS.find((term) => lower.includes(term)) ?? null
+}
+
 export interface GeneratedCard {
   name: string
   description: string
@@ -57,10 +87,11 @@ const GROUPS: { key: 'suspects' | 'weapons' | 'locations'; kind: CardKind }[] = 
  * Check a case from the AI: a title, a victim, an opening narration (up to
  * 600 characters), and exactly 4 suspects, 4 weapons, and 4 locations, each
  * with a name (up to 40) and a description (up to 140). No two cards may
- * share a name. On success, returns the case in the shape rounds are built
- * from (the same shape as the preset case).
+ * share a name, no text may contain a graphic term (the tone guard), and the
+ * title may not simply repeat the setting's name. On success, returns the
+ * case in the shape rounds are built from (the same shape as the preset case).
  */
-export function validateCase(input: unknown): CaseValidation {
+export function validateCase(input: unknown, options: { settingName?: string } = {}): CaseValidation {
   if (typeof input !== 'object' || input === null) return { ok: false, errors: ['Expected a case object.'] }
   const c = input as Record<string, unknown>
   const errors: string[] = []
@@ -95,6 +126,26 @@ export function validateCase(input: unknown): CaseValidation {
 
   const names = cards.map((card) => card.name.toLowerCase())
   if (new Set(names).size !== names.length) errors.push('Two cards share a name.')
+
+  // Tone guard: every piece of text the players will read.
+  const texts: [string, unknown][] = [
+    ['The title', c.title],
+    ['The victim', c.victim],
+    ['The opening narration', c.openingNarration],
+    ...cards.flatMap((card): [string, unknown][] => [
+      [`The card "${card.name}"`, card.name],
+      [`The description of "${card.name}"`, card.description],
+    ]),
+  ]
+  for (const [label, text] of texts) {
+    const term = typeof text === 'string' ? graphicTermIn(text) : null
+    if (term) errors.push(`${label} is too graphic ("${term}").`)
+  }
+
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+  if (options.settingName && typeof c.title === 'string' && same(c.title, options.settingName)) {
+    errors.push("The title repeats the setting's name.")
+  }
 
   if (errors.length > 0) return { ok: false, errors }
   return {
@@ -181,12 +232,13 @@ export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], e
         : 'This is the first case in the series.',
       '',
       'Write:',
-      '- a title (at most 6 words);',
+      '- a title (at most 6 words). The title must not repeat the setting\'s name.',
       '- the victim (a name plus at most 8 words);',
       '- an opening narration of 50 to 70 words, read aloud at the start;',
       '- 4 suspects: every one belongs to this setting and gets a believable motive in their description, because any of them could turn out to be the culprit;',
       '- 4 weapons: each is a possible METHOD for the incident described above, and only one will turn out true, so all 4 must be plausible;',
       '- 4 locations: places within this setting where it could have happened.',
+      'Keep it light, like a party mystery game: no graphic injuries or gore; methods can be sinister but never gruesome.',
       'Be brief. Card names at most 4 words. Each description is ONE short sentence of at most 16 words (a suspect\'s motive fits in that sentence). All 12 names must be different.',
       'Every suspect, weapon, and location is an object with exactly two keys, "name" and "description".',
       'Return: {"title": "", "victim": "", "openingNarration": "", "suspects": [{"name": "", "description": ""} x4], "weapons": [{"name": "", "description": ""} x4], "locations": [{"name": "", "description": ""} x4]}',

@@ -4,6 +4,7 @@ import {
   buildQuestionPrompt,
   CARD_DESCRIPTION_MAX,
   CARD_NAME_MAX,
+  GRAPHIC_TERMS,
   NARRATION_MAX,
   validateCase,
   type GeneratedCase,
@@ -106,6 +107,79 @@ describe('validateCase', () => {
   })
 })
 
+describe('validateCase tone guard', () => {
+  it('lists at least the required graphic terms', () => {
+    for (const term of [
+      'blood',
+      'bloody',
+      'gore',
+      'gory',
+      'maul',
+      'mauling',
+      'dismember',
+      'decapitat',
+      'disembowel',
+      'torture',
+      'mutilat',
+      'incision',
+      'severed head',
+      'corpse',
+    ]) {
+      expect(GRAPHIC_TERMS, term).toContain(term)
+    }
+  })
+
+  it('rejects a graphic term in any card name or description, the title, the victim, or the narration', () => {
+    const places: ((c: GeneratedCase, text: string) => void)[] = [
+      (c, t) => (c.suspects[0].name = t),
+      (c, t) => (c.weapons[2].description = t),
+      (c, t) => (c.locations[3].name = t),
+      (c, t) => (c.title = t),
+      (c, t) => (c.victim = t),
+      (c, t) => (c.openingNarration = t),
+    ]
+    for (const term of GRAPHIC_TERMS) {
+      for (const place of places) {
+        const c = validCase()
+        place(c, `A ${term} here`)
+        expect(validateCase(c).ok, `"${term}" should be refused`).toBe(false)
+      }
+    }
+  })
+
+  it('matches graphic terms regardless of case, and inside longer words', () => {
+    const upper = validCase()
+    upper.weapons[0] = { name: 'Staged MAULING', description: 'Made to look like an animal did it.' }
+    expect(validateCase(upper).ok).toBe(false)
+
+    const inside = validCase()
+    inside.weapons[1] = { name: 'Decapitated Statue', description: 'A heavy stone head.' }
+    expect(validateCase(inside).ok).toBe(false)
+
+    const cut = validCase()
+    cut.weapons[1] = { name: 'Surgical Incision Tool', description: 'A small blade from the medical bay.' }
+    const result = validateCase(cut)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/incision/i)
+  })
+
+  it('still accepts a sinister but not gruesome case', () => {
+    const c = validCase()
+    c.weapons[0] = { name: 'Poisoned Tea', description: 'Something bitter was slipped into the last cup.' }
+    c.weapons[1] = { name: 'Loosened Railing', description: 'One bolt was missing from the balcony rail.' }
+    expect(validateCase(c).ok).toBe(true)
+  })
+
+  it("rejects a title identical to the setting's name, ignoring case and spaces", () => {
+    const same = validCase()
+    same.title = `  ${setting.name.toUpperCase()} `
+    expect(validateCase(same, { settingName: setting.name }).ok).toBe(false)
+
+    const different = validCase()
+    expect(validateCase(different, { settingName: setting.name }).ok).toBe(true)
+  })
+})
+
 describe('buildQuestionPrompt', () => {
   it("includes the setting's name, hook, and mood, and asks for JSON only", () => {
     const { system, user } = buildQuestionPrompt(setting)
@@ -136,6 +210,14 @@ describe('buildCasePrompt', () => {
       expect(text).toContain(a.answer)
     }
     for (const title of earlierTitles) expect(text).toContain(title)
+  })
+
+  it('asks for a light tone and a title that is not the setting name', () => {
+    const text = Object.values(buildCasePrompt(setting, answers, [])).join(' ')
+    expect(text).toContain(
+      'Keep it light, like a party mystery game: no graphic injuries or gore; methods can be sinister but never gruesome.',
+    )
+    expect(text).toContain("The title must not repeat the setting's name.")
   })
 
   it('states the rules the case must follow', () => {

@@ -128,7 +128,7 @@ async function writeCase(tools: ActionTools, game: Game, settingId: string, numb
     `case for round ${number} (${setting.id})`,
     buildCasePrompt(setting, answers, earlierTitles),
     (value) => {
-      const checked = validateCase(value)
+      const checked = validateCase(value, { settingName: setting.name })
       return checked.ok ? { ok: true, value: checked.case } : checked
     },
     2000,
