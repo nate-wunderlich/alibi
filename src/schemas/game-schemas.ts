@@ -43,10 +43,11 @@ export const gamesSchema: CollectionSchema = {
     text('host'),
     text('guest'),
     number('bestOf'),
-    number('hostScore'),
-    number('guestScore'),
+    number('scoreHost'),
+    number('scoreGuest'),
     number('currentRound'),
     text('status'),
+    /** The winner's user id once the series is decided. */
     text('seriesWinner'),
   ],
   permissions: signedInReadOnly,
@@ -59,7 +60,17 @@ export const playersSchema: CollectionSchema = {
   permissions: signedInReadOnly,
 }
 
-/** One row per round. Status: generating -> ready -> playing -> revealed. */
+/**
+ * One row per round. Status: generating -> ready -> playing -> revealed.
+ *
+ * `guessedThisTurn` is 1 once the player on turn has guessed (R33: one guess
+ * per turn, and no ending a turn without one). `pendingGuessId` is set while
+ * the opponent must choose which card to show.
+ *
+ * The revealed* fields stay empty until the reveal, then hold JSON copies of
+ * the solution, both hands, and the accusation (R30). The secret collections
+ * themselves are never opened up.
+ */
 export const roundsSchema: CollectionSchema = {
   name: 'rounds',
   columns: [
@@ -71,9 +82,14 @@ export const roundsSchema: CollectionSchema = {
     text('victim'),
     text('openingNarration'),
     text('starter'),
-    text('turn'),
+    text('turnUserId'),
+    number('guessedThisTurn'),
+    text('pendingGuessId'),
     text('faceUpCardId'),
-    text('winner'),
+    text('winnerUserId'),
+    text('revealedSolution'),
+    text('revealedHands'),
+    text('revealedAccusation'),
   ],
   permissions: signedInReadOnly,
 }
@@ -126,6 +142,53 @@ export const joinCodesSchema: CollectionSchema = {
   permissions: signedInOwnReadOnly,
 }
 
+/**
+ * Every guess. Both players see every guess and whether a card was shown
+ * (GAME_RULES.md, "Guessing"), so it holds no secrets.
+ * result: 'pending' (the opponent must choose), 'shown', or 'none'.
+ */
+export const guessesSchema: CollectionSchema = {
+  name: 'guesses',
+  columns: [
+    text('roundId'),
+    text('byUserId'),
+    text('suspect'),
+    text('weapon'),
+    text('location'),
+    text('result'),
+    number('seq'),
+  ],
+  permissions: signedInReadOnly,
+}
+
+/**
+ * Which card was shown for a guess. R29: only the guesser (toUserId) reads it;
+ * the player who showed it already knows.
+ */
+export const shownCardsSchema: CollectionSchema = {
+  name: 'shown_cards',
+  columns: [text('guessId'), text('roundId'), text('toUserId'), text('cardId')],
+  ownerField: 'toUserId',
+  permissions: signedInOwnReadOnly,
+}
+
+/**
+ * Accusations. R30: no client reads this collection; the reveal copies the
+ * accusation into the round.
+ */
+export const accusationsSchema: CollectionSchema = {
+  name: 'accusations',
+  columns: [
+    text('roundId'),
+    text('byUserId'),
+    text('suspect'),
+    text('weapon'),
+    text('location'),
+    number('correct'),
+  ],
+  permissions: { '*': NO_ACCESS },
+}
+
 export const gameSchemas: CollectionSchema[] = [
   gamesSchema,
   playersSchema,
@@ -134,4 +197,7 @@ export const gameSchemas: CollectionSchema[] = [
   handsSchema,
   solutionSchema,
   joinCodesSchema,
+  guessesSchema,
+  shownCardsSchema,
+  accusationsSchema,
 ]

@@ -1,12 +1,13 @@
 /**
- * Dev-only probe for the secrecy test (tests/secrecy.spec.ts):
+ * Dev-only probe for the multi-user tests (tests/secrecy.spec.ts, tests/round.spec.ts):
  *   /dev/records?round=<roundId>&game=<gameId>
  *
  * Two rules keep it harmless:
- * 1. It only renders what useQuery returns for the signed-in user (hands and
- *    solution for one round, join codes for one game, and the latest games).
- *    That is exactly what the server already sends this browser; the page
- *    reveals nothing extra, and it never calls an action.
+ * 1. It only renders what useQuery returns for the signed-in user (one
+ *    round's hands, solution, cards, guesses, and shown cards; one game's
+ *    join codes and rounds; and the latest games). That is exactly what the
+ *    server already sends this browser; the page reveals nothing extra, and it
+ *    never calls an action.
  * 2. It renders "Not found" unless import.meta.env.DEV is true, so on the
  *    live site (a production build) it is inert.
  */
@@ -23,16 +24,16 @@ function Probe() {
   const [params] = useSearchParams()
   const roundId = params.get('round') ?? ''
   const gameId = params.get('game') ?? ''
-  const hands = useQuery('hands', { where: { roundId } })
-  const solution = useQuery('solution', { where: { roundId } })
-  const joinCodes = useQuery('join_codes', { where: { gameId } })
-  const games = useQuery('games', { orderBy: 'createdAt', orderDir: 'desc', limit: 50 })
 
   const sections = [
-    ['hands', hands],
-    ['solution', solution],
-    ['join_codes', joinCodes],
-    ['games', games],
+    ['hands', useQuery('hands', { where: { roundId } })],
+    ['solution', useQuery('solution', { where: { roundId } })],
+    ['join_codes', useQuery('join_codes', { where: { gameId } })],
+    ['games', useQuery('games', { orderBy: 'createdAt', orderDir: 'desc', limit: 50 })],
+    ['rounds', useQuery('rounds', { where: { gameId } })],
+    ['cards', useQuery('cards', { where: { roundId } })],
+    ['guesses', useQuery('guesses', { where: { roundId } })],
+    ['shown_cards', useQuery('shown_cards', { where: { roundId } })],
   ] as const
 
   return (

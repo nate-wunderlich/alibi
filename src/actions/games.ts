@@ -1,68 +1,14 @@
 /**
- * Game server actions: createGame, joinGame, startSeries.
- *
- * Actions run with RBAC OFF (see src/server/action-routes.ts): the record
- * tools can read and write any row. So every action here checks the caller
- * itself before writing, and returns a clear error for each failed check.
+ * Game setup actions: createGame, joinGame, startSeries, nextRound.
+ * Every action checks the caller itself (actions bypass RBAC; see helpers.ts).
  */
 
-import type { ActionContext, ActionHandler, ActionResult, ActionTools } from 'deepspace/worker'
+import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { PRESET_CASE } from '../game/presetCase'
 import { deal, starterForRound, type Card } from '../game/rules'
 import { pickSetting } from '../game/settings'
-
-// ---------------------------------------------------------------------------
-// Small helpers
-// ---------------------------------------------------------------------------
-
-/** A check failed: the message goes back to the caller as the action's error. */
-class ActionError extends Error {}
-
-/** Stop the action with a message for the caller. */
-function refuse(message: string): never {
-  throw new ActionError(message)
-}
-
-/** Unwrap a record tool's result, or stop with a message saying what failed. */
-function must<T>(result: ActionResult<T>, what: string): T {
-  if (!result.success) throw new Error(`${what} failed: ${result.error}`)
-  return result.data
-}
-
-/** Run an action body and turn any thrown error into `{ success: false, error }`. */
-function action(body: (ctx: ActionContext<Env>) => Promise<unknown>): ActionHandler<Env> {
-  return async (ctx) => {
-    try {
-      return { success: true, data: await body(ctx) }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      if (!(e instanceof ActionError)) console.error('[action] unexpected error:', message)
-      return { success: false, error: message }
-    }
-  }
-}
-
-interface GameRow {
-  host: string
-  guest: string
-  bestOf: number
-  status: string
-}
-
-/** Load a game by id, or refuse if there is none. */
-async function loadGame(tools: ActionTools, gameId: unknown): Promise<GameRow> {
-  if (typeof gameId !== 'string' || gameId === '') refuse('A game id is required.')
-  const result = await tools.get<Record<string, unknown>>('games', gameId)
-  if (!result.success) refuse('That game does not exist.')
-  return result.data.record.data as unknown as GameRow
-}
-
-/** The caller's display name from the users collection, or '' if unknown. */
-async function displayName(tools: ActionTools, userId: string): Promise<string> {
-  const result = await tools.get<{ name?: string }>('users', userId)
-  return result.success ? (result.data.record.data.name ?? '') : ''
-}
+import { action, loadGame, must, refuse, textParam, userInSeat, type Game } from './helpers'
 
 // ---------------------------------------------------------------------------
 // Join codes
@@ -91,6 +37,85 @@ async function uniqueCode(tools: ActionTools): Promise<string> {
   throw new Error('Could not find a free join code. Please try again.')
 }
 
+/** The caller's display name from the users collection, or '' if unknown. */
+async function displayName(tools: ActionTools, userId: string): Promise<string> {
+  const result = await tools.get<{ name?: string }>('users', userId)
+  return result.success ? (result.data.record.data.name ?? '') : ''
+}
+
+// ---------------------------------------------------------------------------
+// Starting a round (shared by startSeries and nextRound)
+// ---------------------------------------------------------------------------
+
+/**
+ * Set up round `number` of a game: pick an unused setting, lay out the preset
+ * case's 12 cards, deal them with the rules module, and write the round, the
+ * hands, and the solution. Returns the new round's id.
+ */
+async function startRound(tools: ActionTools, game: Game, number: number, usedSettingIds: string[]): Promise<string> {
+  // 1. The round, marked "generating" until everything is written.
+  const setting = pickSetting(usedSettingIds, Math.random)
+  const { recordId: roundId } = must(
+    await tools.create('rounds', {
+      gameId: game.id,
+      number,
+      status: 'generating',
+      settingId: setting.id,
+      caseTitle: PRESET_CASE.title,
+      victim: PRESET_CASE.victim,
+      openingNarration: PRESET_CASE.openingNarration,
+      starter: '',
+      turnUserId: '',
+      guessedThisTurn: 0,
+      pendingGuessId: '',
+      faceUpCardId: '',
+      winnerUserId: '',
+      revealedSolution: '',
+      revealedHands: '',
+      revealedAccusation: '',
+    }),
+    `Creating round ${number}`,
+  )
+
+  // 2. The 12 cards. Each card's record id is the id the rules deal with.
+  const deck: Card[] = []
+  for (const c of PRESET_CASE.cards) {
+    const { recordId } = must(
+      await tools.create('cards', { roundId, kind: c.kind, name: c.name, description: c.description, imageUrl: '' }),
+      'Creating a card',
+    )
+    deck.push({ id: recordId, kind: c.kind })
+  }
+
+  // 3. Deal: envelope, two hands of 4, one face up.
+  const dealt = deal(deck, Math.random)
+  for (const seat of ['host', 'guest'] as const) {
+    must(
+      await tools.create('hands', {
+        roundId,
+        userId: userInSeat(game, seat),
+        cardIds: JSON.stringify(dealt.hands[seat].map((c) => c.id)),
+      }),
+      `Dealing the ${seat}'s hand`,
+    )
+  }
+  must(await tools.create('solution', { roundId, ...dealt.envelope }), 'Sealing the envelope')
+
+  // 4. Open the round: the starter alternates by round number.
+  const starter = starterForRound(number)
+  must(
+    await tools.update('rounds', roundId, {
+      status: 'playing',
+      faceUpCardId: dealt.faceUp.id,
+      starter,
+      turnUserId: userInSeat(game, starter),
+    }),
+    `Opening round ${number}`,
+  )
+  must(await tools.update('games', game.id, { status: 'playing', currentRound: number }), 'Updating the game')
+  return roundId
+}
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
@@ -110,8 +135,8 @@ const createGame = action(async ({ userId, params, tools }) => {
       host: userId,
       guest: '',
       bestOf,
-      hostScore: 0,
-      guestScore: 0,
+      scoreHost: 0,
+      scoreGuest: 0,
       currentRound: 0,
       status: 'lobby',
       seriesWinner: '',
@@ -120,12 +145,7 @@ const createGame = action(async ({ userId, params, tools }) => {
   )
   must(await tools.create('join_codes', { gameId, code, hostId: userId }), 'Saving the join code')
   must(
-    await tools.create('players', {
-      gameId,
-      userId,
-      displayName: await displayName(tools, userId),
-      seat: 'host',
-    }),
+    await tools.create('players', { gameId, userId, displayName: await displayName(tools, userId), seat: 'host' }),
     'Adding the host',
   )
   return { gameId, code, userId }
@@ -141,92 +161,54 @@ const joinGame = action(async ({ userId, params, tools }) => {
 
   const found = must(await tools.query('join_codes', { where: { code }, limit: 1 }), 'Looking up the code')
   if (found.records.length === 0) refuse('No game has that code.')
-  const gameId = String(found.records[0].data.gameId)
-  const game = await loadGame(tools, gameId)
+  const game = await loadGame(tools, String(found.records[0].data.gameId))
 
   if (game.status !== 'lobby') refuse('That game has already started.')
   if (game.host === userId) refuse('You are the host of this game; share the code with your opponent.')
   if (game.guest !== '') refuse('That game already has two players.')
 
-  must(await tools.update('games', gameId, { guest: userId }), 'Joining the game')
+  must(await tools.update('games', game.id, { guest: userId }), 'Joining the game')
   must(
     await tools.create('players', {
-      gameId,
+      gameId: game.id,
       userId,
       displayName: await displayName(tools, userId),
       seat: 'guest',
     }),
     'Adding the guest',
   )
-  return { gameId, userId }
+  return { gameId: game.id, userId }
 })
 
-/**
- * startSeries({ gameId }): the host starts round 1.
- * Picks a setting, lays out the preset case's 12 cards, deals them with the
- * rules module, and writes the round, the hands, and the solution.
- */
+/** startSeries({ gameId }): the host starts round 1 once a guest has joined. */
 const startSeries = action(async ({ userId, params, tools }) => {
-  const gameId = params.gameId as string
-  const game = await loadGame(tools, gameId)
+  const game = await loadGame(tools, textParam(params, 'gameId'))
   if (game.host !== userId) refuse('Only the host can start the series.')
   if (game.guest === '') refuse('Wait for your opponent to join.')
   if (game.status !== 'lobby') refuse('This series has already started.')
 
-  // 1. The round, marked "generating" until everything is written.
-  const setting = pickSetting([], Math.random)
-  const { recordId: roundId } = must(
-    await tools.create('rounds', {
-      gameId,
-      number: 1,
-      status: 'generating',
-      settingId: setting.id,
-      caseTitle: PRESET_CASE.title,
-      victim: PRESET_CASE.victim,
-      openingNarration: PRESET_CASE.openingNarration,
-      starter: '',
-      turn: '',
-      faceUpCardId: '',
-      winner: '',
-    }),
-    'Creating round 1',
-  )
-
-  // 2. The 12 cards. Each card's record id is the id the rules deal with.
-  const deck: Card[] = []
-  for (const c of PRESET_CASE.cards) {
-    const { recordId } = must(
-      await tools.create('cards', { roundId, kind: c.kind, name: c.name, description: c.description, imageUrl: '' }),
-      'Creating a card',
-    )
-    deck.push({ id: recordId, kind: c.kind })
-  }
-
-  // 3. Deal: envelope, two hands of 4, one face up.
-  const dealt = deal(deck, Math.random)
-  for (const [seat, owner] of [
-    ['host', game.host],
-    ['guest', game.guest],
-  ] as const) {
-    must(
-      await tools.create('hands', {
-        roundId,
-        userId: owner,
-        cardIds: JSON.stringify(dealt.hands[seat].map((c) => c.id)),
-      }),
-      `Dealing the ${seat}'s hand`,
-    )
-  }
-  must(await tools.create('solution', { roundId, ...dealt.envelope }), 'Sealing the envelope')
-
-  // 4. Open the round and the series.
-  const starter = starterForRound(1)
-  must(
-    await tools.update('rounds', roundId, { status: 'playing', faceUpCardId: dealt.faceUp.id, starter, turn: starter }),
-    'Opening round 1',
-  )
-  must(await tools.update('games', gameId, { status: 'playing', currentRound: 1 }), 'Starting the series')
-  return { gameId, roundId }
+  const roundId = await startRound(tools, game, 1, [])
+  return { gameId: game.id, roundId }
 })
 
-export const gameActions: Record<string, ActionHandler<Env>> = { createGame, joinGame, startSeries }
+/**
+ * nextRound({ gameId }): the host starts the next round, after the current
+ * one is revealed and while nobody has won the series. The setting is new to
+ * this series.
+ */
+const nextRound = action(async ({ userId, params, tools }) => {
+  const game = await loadGame(tools, textParam(params, 'gameId'))
+  if (game.host !== userId) refuse('Only the host can start the next round.')
+  if (game.status === 'finished') refuse('The series is over.')
+  if (game.status !== 'playing') refuse('The series has not started.')
+
+  const rounds = must(await tools.query('rounds', { where: { gameId: game.id }, limit: 50 }), 'Loading the rounds')
+  const current = rounds.records.find((r) => Number(r.data.number) === game.currentRound)
+  if (!current || current.data.status !== 'revealed') refuse('Finish the current round first.')
+
+  const usedSettingIds = rounds.records.map((r) => String(r.data.settingId))
+  const roundId = await startRound(tools, game, game.currentRound + 1, usedSettingIds)
+  return { gameId: game.id, roundId }
+})
+
+export const gameActions: Record<string, ActionHandler<Env>> = { createGame, joinGame, startSeries, nextRound }
