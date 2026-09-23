@@ -81,3 +81,5 @@ If you guess and do not accuse, the turn passes to your opponent.
 - Two actions arriving at the same instant on one round are not
   transactional; the later write can overwrite the earlier. Play is
   turn-based, so this is unlikely.
+- Writing a case takes a few seconds; the host's Start/Next request waits
+  for it while both players see 'Writing your case...'.
