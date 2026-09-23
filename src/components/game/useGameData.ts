@@ -32,7 +32,7 @@ export interface PlayerData {
 export interface RoundData {
   gameId: string
   number: number
-  status: 'generating' | 'ready' | 'playing' | 'revealed'
+  status: 'answering' | 'generating' | 'playing' | 'revealed'
   settingId: string
   caseTitle: string
   victim: string
@@ -46,6 +46,23 @@ export interface RoundData {
   revealedSolution: string
   revealedHands: string
   revealedAccusation: string
+  hostAnswered: number
+  guestAnswered: number
+  revealedAnswers: string
+}
+
+/** A player's case question, as prepared by the server. */
+export interface StoredQuestion {
+  id: string
+  text: string
+  answers: string[]
+}
+
+/** A locked-in answer, with its question's text. */
+export interface StoredAnswer {
+  questionId: string
+  question: string
+  answer: string
 }
 
 export interface CardData {
@@ -91,6 +108,12 @@ export function useGameData(gameId: string) {
   const guesses = useQuery<GuessData>('guesses', { where: { roundId } })
   const shown = useQuery<{ guessId: string; cardId: string }>('shown_cards', { where: { roundId } })
 
+  // The next case being prepared: round 1 in the lobby, or the round after a reveal.
+  const prepRecord = rounds.records.find((r) => r.data.number === (game?.currentRound ?? 0) + 1)
+  const prepRoundId = prepRecord?.recordId ?? ''
+  const myQuestions = useQuery<{ questions: string }>('questions', { where: { roundId: prepRoundId } })
+  const myAnswers = useQuery<{ answers: string }>('answers', { where: { roundId: prepRoundId } })
+
   return useMemo(() => {
     const cardsById = new Map<string, Card>(cards.records.map((c) => [c.recordId, { id: c.recordId, ...c.data }]))
     const myHandRow = hands.records.find((h) => h.data.userId === myId)
@@ -117,6 +140,10 @@ export function useGameData(gameId: string) {
       joinCode: joinCodes.records[0]?.data.code ?? '',
       rounds: rounds.records.map((r) => ({ id: r.recordId, ...r.data })).sort((a, b) => a.number - b.number),
       round: roundRecord ? { id: roundRecord.recordId, ...roundRecord.data } : undefined,
+      /** The next case, waiting for answers or being written. Only I receive my questions and answers. */
+      prepRound: prepRecord ? { id: prepRecord.recordId, ...prepRecord.data } : undefined,
+      myQuestions: myQuestions.records[0] ? (JSON.parse(myQuestions.records[0].data.questions) as StoredQuestion[]) : [],
+      myAnswers: myAnswers.records[0] ? (JSON.parse(myAnswers.records[0].data.answers) as StoredAnswer[]) : [],
       cards: [...cardsById.values()],
       cardsById,
       myHand,
@@ -124,7 +151,23 @@ export function useGameData(gameId: string) {
       shownToMe: new Map(shown.records.map((s) => [s.data.guessId, s.data.cardId])),
       nameOf,
     }
-  }, [myId, game, gameId, games.status, players.records, joinCodes.records, rounds.records, roundRecord, cards.records, hands.records, guesses.records, shown.records])
+  }, [
+    myId,
+    game,
+    gameId,
+    games.status,
+    players.records,
+    joinCodes.records,
+    rounds.records,
+    roundRecord,
+    prepRecord,
+    cards.records,
+    hands.records,
+    guesses.records,
+    shown.records,
+    myQuestions.records,
+    myAnswers.records,
+  ])
 }
 
 export type GameView = ReturnType<typeof useGameData>

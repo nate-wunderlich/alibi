@@ -61,7 +61,11 @@ export const playersSchema: CollectionSchema = {
 }
 
 /**
- * One row per round. Status: generating -> ready -> playing -> revealed.
+ * One row per round. Status: answering -> generating -> playing -> revealed.
+ * A round is prepared (setting and questions) while the previous one is still
+ * on screen: at game creation for round 1, at each reveal for the next.
+ * `hostAnswered` / `guestAnswered` are 1 once that player has answered their
+ * questions; the answers themselves stay owner-only until the reveal.
  *
  * `guessedThisTurn` is 1 once the player on turn has guessed (R33: one guess
  * per turn, and no ending a turn without one). `pendingGuessId` is set while
@@ -90,6 +94,10 @@ export const roundsSchema: CollectionSchema = {
     text('revealedSolution'),
     text('revealedHands'),
     text('revealedAccusation'),
+    number('hostAnswered'),
+    number('guestAnswered'),
+    /** At the reveal (R30): both players' questions and answers, as JSON. */
+    text('revealedAnswers'),
   ],
   permissions: signedInReadOnly,
 }
@@ -212,6 +220,32 @@ export const notesSchema: CollectionSchema = {
   },
 }
 
+/**
+ * Each player's 2 case questions for a round (R25), JSON:
+ * [{ id, text, answers: [4 options] }]. Written by the server when the round
+ * is prepared. The guest's row is written with seat 'guest' and an empty
+ * userId, and claimed when the guest joins, so nobody reads it before then.
+ * R29: owner only; no client writes.
+ */
+export const questionsSchema: CollectionSchema = {
+  name: 'questions',
+  columns: [text('roundId'), text('seat'), text('userId'), text('questions')],
+  ownerField: 'userId',
+  permissions: signedInOwnReadOnly,
+}
+
+/**
+ * A player's answers to their 2 questions, JSON:
+ * [{ questionId, question, answer }]. Written only by the submitAnswers action.
+ * R29: owner only until the reveal, which copies them into the round (R30).
+ */
+export const answersSchema: CollectionSchema = {
+  name: 'answers',
+  columns: [text('roundId'), text('userId'), text('answers')],
+  ownerField: 'userId',
+  permissions: signedInOwnReadOnly,
+}
+
 export const gameSchemas: CollectionSchema[] = [
   gamesSchema,
   playersSchema,
@@ -224,4 +258,6 @@ export const gameSchemas: CollectionSchema[] = [
   shownCardsSchema,
   accusationsSchema,
   notesSchema,
+  questionsSchema,
+  answersSchema,
 ]

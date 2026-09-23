@@ -11,8 +11,9 @@ import { useAction } from '@/lib/actions'
 import type { Triple } from '../../game/rules'
 import { SETTINGS } from '../../game/settings'
 import { CardView, FileLabel, InlineError } from './CardView'
+import { answeredFlags, QuestionsPanel, WritingCase } from './QuestionsPanel'
 import { Scoreboard } from './Scoreboard'
-import type { GameView, Round } from './useGameData'
+import type { GameView, Round, StoredAnswer } from './useGameData'
 
 interface Accusation extends Triple {
   byUserId: string
@@ -32,6 +33,7 @@ export function RevealDetails({ view, round }: { view: GameView; round: Round })
   const envelope = parse<Triple | null>(round.revealedSolution, null)
   const hands = parse<Record<string, string[]>>(round.revealedHands, {})
   const accusation = parse<Accusation | null>(round.revealedAccusation, null)
+  const answers = parse<Record<string, StoredAnswer[]>>(round.revealedAnswers, {})
   const card = (id: string) => view.cardsById.get(id)
   const name = (id: string) => card(id)?.name ?? '?'
 
@@ -61,6 +63,24 @@ export function RevealDetails({ view, round }: { view: GameView; round: Round })
         {round.winnerUserId === view.myId ? 'You win this case.' : `${view.nameOf(round.winnerUserId)} wins this case.`}
       </p>
 
+      {Object.keys(answers).length > 0 && (
+        <div data-testid="reveal-answers">
+          <FileLabel>The answers that shaped this case</FileLabel>
+          <ul className="space-y-2">
+            {Object.entries(answers).flatMap(([userId, list]) =>
+              list.map((a) => (
+                <li key={`${userId}-${a.questionId}`} className="rounded-sm border border-border bg-card px-3 py-2 text-sm">
+                  <div className="text-muted-foreground">
+                    {view.nameOf(userId)} · {a.question}
+                  </div>
+                  <div className="font-semibold">{a.answer}</div>
+                </li>
+              )),
+            )}
+          </ul>
+        </div>
+      )}
+
       <div className="grid gap-4">
         {Object.entries(hands).map(([userId, ids]) => (
           <div key={userId} data-testid="reveal-hand">
@@ -77,10 +97,16 @@ export function RevealDetails({ view, round }: { view: GameView; round: Round })
   )
 }
 
-/** REVEAL screen between rounds: the details, the score, and "Next case" for the host. */
+/**
+ * REVEAL screen between rounds: the details, the score, my questions for the
+ * next case, and "Next case" for the host once both players have answered.
+ */
 export function Reveal({ view, round }: { view: GameView; round: Round }) {
   const next = useAction()
   const setting = SETTINGS.find((s) => s.id === round.settingId)
+  const prep = view.prepRound
+  const writing = prep?.status === 'generating'
+  const bothAnswered = prep ? answeredFlags(view, prep).both : false
 
   return (
     <section data-testid="reveal" className="space-y-6">
@@ -92,24 +118,32 @@ export function Reveal({ view, round }: { view: GameView; round: Round }) {
         <h1 className="font-display text-3xl font-bold leading-tight">{round.caseTitle}</h1>
       </header>
       <RevealDetails view={view} round={round} />
-      {view.mySeat === 'host' ? (
-        <div>
-          <Button
-            data-testid="next-case"
-            size="lg"
-            className="w-full"
-            loading={next.pending}
-            onClick={() => next.run('nextRound', { gameId: view.gameId })}
-          >
-            Next case
-          </Button>
-          <InlineError message={next.error} />
-        </div>
-      ) : (
-        <p data-testid="next-case-waiting" className="text-muted-foreground">
-          Waiting for {view.game ? view.nameOf(view.game.host) : 'the host'} to open the next case.
-        </p>
-      )}
+
+      {writing ? <WritingCase /> : prep && <QuestionsPanel key={prep.id} view={view} round={prep} />}
+
+      {!writing &&
+        (view.mySeat === 'host' ? (
+          <div>
+            <Button
+              data-testid="next-case"
+              size="lg"
+              className="w-full"
+              disabled={!bothAnswered}
+              loading={next.pending}
+              onClick={() => next.run('nextRound', { gameId: view.gameId })}
+            >
+              Next case
+            </Button>
+            {!bothAnswered && (
+              <p className="mt-2 text-sm text-muted-foreground">You can open it once you both have answered.</p>
+            )}
+            <InlineError message={next.error} />
+          </div>
+        ) : (
+          <p data-testid="next-case-waiting" className="text-muted-foreground">
+            Waiting for {view.game ? view.nameOf(view.game.host) : 'the host'} to open the next case.
+          </p>
+        ))}
     </section>
   )
 }

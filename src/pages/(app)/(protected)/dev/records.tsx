@@ -4,7 +4,8 @@
  *
  * Two rules keep it harmless:
  * 1. It only renders what useQuery returns for the signed-in user (one
- *    round's hands, solution, cards, guesses, shown cards, and notes; one game's
+ *    round's hands, solution, cards, guesses, shown cards, notes, questions,
+ *    and answers; one game's
  *    join codes and rounds; and the latest games). That is exactly what the
  *    server already sends this browser; the page reveals nothing extra, and it
  *    never calls an action.
@@ -35,6 +36,8 @@ function Probe() {
     ['guesses', useQuery('guesses', { where: { roundId } })],
     ['shown_cards', useQuery('shown_cards', { where: { roundId } })],
     ['notes', useQuery('notes', { where: { roundId } })],
+    ['questions', useQuery('questions', { where: { roundId } })],
+    ['answers', useQuery('answers', { where: { roundId } })],
   ] as const
 
   return (

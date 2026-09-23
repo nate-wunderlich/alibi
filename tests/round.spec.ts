@@ -14,7 +14,15 @@
  */
 import type { Page } from '@playwright/test'
 import { test, expect } from 'deepspace/testing'
-import { callAction, mustCall, parseJson, visibleRecords, type RecordRow, type Visible } from './helpers/game'
+import {
+  answerMyQuestions,
+  callAction,
+  mustCall,
+  parseJson,
+  visibleRecords,
+  type RecordRow,
+  type Visible,
+} from './helpers/game'
 
 type Kind = 'suspect' | 'weapon' | 'location'
 type Triple = Record<Kind, string>
@@ -66,18 +74,24 @@ const guessRow = (v: Visible, guessId: string) => v.guesses.rows.find((g) => g.r
 test('a best-of-3 series: show, choose, no match, wrong and right accusations, reveal, next round', async ({
   users,
 }) => {
-  test.setTimeout(240_000)
+  test.setTimeout(420_000)
   const [alice, bob] = await users(['Alice', 'Bob'])
   await Promise.all([alice.page.goto('/home'), bob.page.goto('/home')])
 
-  // Setup: Alice hosts a best of 3, Bob joins, Alice starts.
-  const { gameId, code, userId: aliceId } = await mustCall<{ gameId: string; code: string; userId: string }>(
+  // Setup: Alice hosts a best of 3, Bob joins, both answer their questions, Alice starts.
+  const created = await mustCall<{ gameId: string; code: string; userId: string; roundId: string }>(
     alice.page,
     'createGame',
     { bestOf: 3 },
   )
+  const { gameId, code, userId: aliceId } = created
   const { userId: bobId } = await mustCall<{ userId: string }>(bob.page, 'joinGame', { code })
+  const tooEarly = await callAction(alice.page, 'startSeries', { gameId })
+  expect(tooEarly.success, 'the series cannot start before both players answer').toBe(false)
+  await answerMyQuestions(alice.page, created.roundId, gameId)
+  await answerMyQuestions(bob.page, created.roundId, gameId)
   const { roundId } = await mustCall<{ roundId: string }>(alice.page, 'startSeries', { gameId })
+  expect(roundId).toBe(created.roundId)
 
   let a = await viewRound(alice.page, roundId, gameId)
   let b = await viewRound(bob.page, roundId, gameId)
@@ -113,6 +127,7 @@ test('a best-of-3 series: show, choose, no match, wrong and right accusations, r
   })
 
   let choiceGuessId = ''
+  let nextRoundId = ''
   await test.step('c. choose: two of Alice\'s cards match, Alice picks one, only Bob sees it', async () => {
     // Two of Alice's cards of different kinds, plus the envelope card of the third kind.
     const [first] = a.hand
@@ -172,12 +187,14 @@ test('a best-of-3 series: show, choose, no match, wrong and right accusations, r
     // Swap the envelope suspect for any other suspect.
     const otherSuspect = [...a.kindOf.entries()].find(([id, k]) => k === 'suspect' && id !== envelope.suspect)![0]
     const accusation = { ...envelope, suspect: otherSuspect }
-    const res = await mustCall<{ correct: boolean; winnerUserId: string }>(alice.page, 'accuse', {
+    const res = await mustCall<{ correct: boolean; winnerUserId: string; nextRoundId: string }>(alice.page, 'accuse', {
       roundId,
       ...accusation,
     })
     expect(res.correct).toBe(false)
     expect(res.winnerUserId).toBe(bobId)
+    expect(res.nextRoundId, 'the series goes on, so round 2 is prepared').not.toBe('')
+    nextRoundId = res.nextRoundId
 
     a = await viewRound(alice.page, roundId, gameId)
     b = await viewRound(bob.page, roundId, gameId)
@@ -197,15 +214,23 @@ test('a best-of-3 series: show, choose, no match, wrong and right accusations, r
       expect(view.game.data.scoreHost, 'Alice has 0').toBe(0)
       expect(view.visible.solution.rows, 'the solution collection stays closed after the reveal').toHaveLength(0)
       expect(view.visible.hands.rows, 'hands stay owner-only after the reveal').toHaveLength(1)
+      const answers = parseJson<Record<string, unknown[]>>(view.round.data.revealedAnswers)
+      expect(answers[aliceId], "Alice's answers are revealed").toHaveLength(2)
+      expect(answers[bobId], "Bob's answers are revealed").toHaveLength(2)
     }
   })
 
   let round2Id = ''
-  await test.step('f. nextRound: host only; round 2 has a new setting and Bob starts', async () => {
+  await test.step('f. nextRound: host only, after both answer; round 2 has a new setting and Bob starts', async () => {
     const byBob = await callAction(bob.page, 'nextRound', { gameId })
     expect(byBob.success, 'Bob cannot start the next round').toBe(false)
     expect(byBob.error).toMatch(/host/i)
+    const unanswered = await callAction(alice.page, 'nextRound', { gameId })
+    expect(unanswered.success, 'the next case waits for both answers').toBe(false)
+    await answerMyQuestions(alice.page, nextRoundId, gameId)
+    await answerMyQuestions(bob.page, nextRoundId, gameId)
     round2Id = (await mustCall<{ roundId: string }>(alice.page, 'nextRound', { gameId })).roundId
+    expect(round2Id).toBe(nextRoundId)
     const view = await viewRound(bob.page, round2Id, gameId)
     expect(view.round.data.number).toBe(2)
     expect(view.round.data.status).toBe('playing')
@@ -218,12 +243,13 @@ test('a best-of-3 series: show, choose, no match, wrong and right accusations, r
     const a2 = await viewRound(alice.page, round2Id, gameId)
     const b2 = await viewRound(bob.page, round2Id, gameId)
     const envelope2 = deriveEnvelope(a2, b2)
-    const res = await mustCall<{ correct: boolean; winnerUserId: string }>(bob.page, 'accuse', {
+    const res = await mustCall<{ correct: boolean; winnerUserId: string; nextRoundId: string }>(bob.page, 'accuse', {
       roundId: round2Id,
       ...envelope2,
     })
     expect(res.correct).toBe(true)
     expect(res.winnerUserId).toBe(bobId)
+    expect(res.nextRoundId, 'the series is decided, so no round 3 is prepared').toBe('')
 
     const after = await viewRound(alice.page, round2Id, gameId)
     expect(after.round.data.status).toBe('revealed')

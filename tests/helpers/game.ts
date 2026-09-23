@@ -68,6 +68,8 @@ export const PROBE_SECTIONS = [
   'guesses',
   'shown_cards',
   'notes',
+  'questions',
+  'answers',
 ] as const
 export type ProbeSection = (typeof PROBE_SECTIONS)[number]
 
@@ -97,3 +99,22 @@ export async function visibleRecords(page: Page, roundId: string, gameId: string
 
 /** Parse a JSON text column. */
 export const parseJson = <T>(value: unknown): T => JSON.parse(String(value)) as T
+
+/**
+ * Answer this player's case questions for a round, the way the app does:
+ * read my questions through the probe (only mine arrive), pick the first
+ * option of each, and call submitAnswers. Returns what was submitted.
+ */
+export async function answerMyQuestions(page: Page, roundId: string, gameId: string) {
+  let rows: RecordRow[] = []
+  await expect
+    .poll(async () => (rows = (await visibleRecords(page, roundId, gameId)).questions.rows).length, {
+      message: 'my questions should arrive',
+      timeout: 15_000,
+    })
+    .toBe(1)
+  const questions = parseJson<{ id: string; text: string; answers: string[] }[]>(rows[0].data.questions)
+  const answers = questions.map((q) => ({ questionId: q.id, answer: q.answers[0] }))
+  await mustCall(page, 'submitAnswers', { roundId, answers })
+  return answers
+}

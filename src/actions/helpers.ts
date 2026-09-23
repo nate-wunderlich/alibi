@@ -112,6 +112,8 @@ export interface Round {
   turnUserId: string
   guessedThisTurn: boolean
   pendingGuessId: string
+  hostAnswered: boolean
+  guestAnswered: boolean
 }
 
 /** Load a round by id, or refuse if there is none. */
@@ -128,6 +130,8 @@ export async function loadRound(tools: ActionTools, roundId: string): Promise<Ro
     turnUserId: String(d.turnUserId ?? ''),
     guessedThisTurn: Number(d.guessedThisTurn ?? 0) === 1,
     pendingGuessId: String(d.pendingGuessId ?? ''),
+    hostAnswered: Number(d.hostAnswered ?? 0) === 1,
+    guestAnswered: Number(d.guestAnswered ?? 0) === 1,
   }
 }
 

@@ -27,6 +27,7 @@ import {
   type Game,
   type Round,
 } from './helpers'
+import { loadAnswers, prepareRound } from './rounds'
 
 /** Load a round that is being played, its game, and the caller's seat; refuse otherwise. */
 async function loadPlayingRound(tools: ActionTools, roundId: string, userId: string) {
@@ -133,8 +134,11 @@ const endTurn = action(async ({ userId, params, tools }) => {
 })
 
 /**
- * The reveal (R30): copy the solution, both hands, and the accusation into
- * the round, mark it revealed, score it, and finish the series if it is decided.
+ * The reveal (R30): copy the solution, both hands, the accusation, and both
+ * players' questions and answers into the round, mark it revealed, score it,
+ * and finish the series if it is decided. Otherwise prepare the next case
+ * (setting and questions), so both players can answer on the reveal screen.
+ * Returns the winner and the next round's id ('' when the series is over).
  */
 async function reveal(
   tools: ActionTools,
@@ -143,13 +147,14 @@ async function reveal(
   solution: Triple,
   accusation: Record<string, unknown>,
   winner: Player,
-): Promise<string> {
+): Promise<{ winnerUserId: string; nextRoundId: string }> {
   const hands: Record<string, string[]> = {}
   for (const seat of ['host', 'guest'] as const) {
     const id = userInSeat(game, seat)
     hands[id] = await loadHandIds(tools, round.id, id)
   }
   const winnerUserId = userInSeat(game, winner)
+  const answers = await loadAnswers(tools, round.id, game)
   must(
     await tools.update('rounds', round.id, {
       status: 'revealed',
@@ -158,6 +163,7 @@ async function reveal(
       revealedSolution: JSON.stringify(solution),
       revealedHands: JSON.stringify(hands),
       revealedAccusation: JSON.stringify(accusation),
+      revealedAnswers: JSON.stringify(answers),
     }),
     'Revealing the round',
   )
@@ -175,7 +181,8 @@ async function reveal(
     }),
     'Updating the score',
   )
-  return winnerUserId
+  const nextRoundId = champion ? '' : await prepareRound(tools, game, round.number + 1)
+  return { winnerUserId, nextRoundId }
 }
 
 /**
@@ -197,8 +204,15 @@ const accuse = action(async ({ userId, params, tools }) => {
   )
 
   const winner = correct ? seat : nextTurn(seat)
-  const winnerUserId = await reveal(tools, game, round, solution, { byUserId: userId, ...triple, correct }, winner)
-  return { correct, winnerUserId }
+  const { winnerUserId, nextRoundId } = await reveal(
+    tools,
+    game,
+    round,
+    solution,
+    { byUserId: userId, ...triple, correct },
+    winner,
+  )
+  return { correct, winnerUserId, nextRoundId }
 })
 
 export const turnActions: Record<string, ActionHandler<Env>> = { guess, showCard, endTurn, accuse }

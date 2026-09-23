@@ -1,14 +1,22 @@
 /**
- * Game setup actions: createGame, joinGame, startSeries, nextRound.
+ * Game setup actions: createGame, joinGame, submitAnswers, startSeries, nextRound.
  * Every action checks the caller itself (actions bypass RBAC; see helpers.ts).
+ * Preparing and opening rounds (setting, questions, the AI case, the deal)
+ * lives in rounds.ts.
  */
 
 import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
-import { PRESET_CASE } from '../game/presetCase'
-import { deal, starterForRound, type Card } from '../game/rules'
-import { pickSetting } from '../game/settings'
-import { action, loadGame, must, refuse, textParam, userInSeat, type Game } from './helpers'
+import {
+  action,
+  loadGame,
+  loadRound,
+  must,
+  refuse,
+  requireSeat,
+  textParam,
+} from './helpers'
+import { openRound, prepareRound, type StoredAnswer, type StoredQuestion } from './rounds'
 
 // ---------------------------------------------------------------------------
 // Join codes
@@ -43,77 +51,10 @@ async function displayName(tools: ActionTools, userId: string): Promise<string> 
   return result.success ? (result.data.record.data.name ?? '') : ''
 }
 
-// ---------------------------------------------------------------------------
-// Starting a round (shared by startSeries and nextRound)
-// ---------------------------------------------------------------------------
-
-/**
- * Set up round `number` of a game: pick an unused setting, lay out the preset
- * case's 12 cards, deal them with the rules module, and write the round, the
- * hands, and the solution. Returns the new round's id.
- */
-async function startRound(tools: ActionTools, game: Game, number: number, usedSettingIds: string[]): Promise<string> {
-  // 1. The round, marked "generating" until everything is written.
-  const setting = pickSetting(usedSettingIds, Math.random)
-  const { recordId: roundId } = must(
-    await tools.create('rounds', {
-      gameId: game.id,
-      number,
-      status: 'generating',
-      settingId: setting.id,
-      caseTitle: PRESET_CASE.title,
-      victim: PRESET_CASE.victim,
-      openingNarration: PRESET_CASE.openingNarration,
-      starter: '',
-      turnUserId: '',
-      guessedThisTurn: 0,
-      pendingGuessId: '',
-      faceUpCardId: '',
-      winnerUserId: '',
-      revealedSolution: '',
-      revealedHands: '',
-      revealedAccusation: '',
-    }),
-    `Creating round ${number}`,
-  )
-
-  // 2. The 12 cards. Each card's record id is the id the rules deal with.
-  const deck: Card[] = []
-  for (const c of PRESET_CASE.cards) {
-    const { recordId } = must(
-      await tools.create('cards', { roundId, kind: c.kind, name: c.name, description: c.description, imageUrl: '' }),
-      'Creating a card',
-    )
-    deck.push({ id: recordId, kind: c.kind })
-  }
-
-  // 3. Deal: envelope, two hands of 4, one face up.
-  const dealt = deal(deck, Math.random)
-  for (const seat of ['host', 'guest'] as const) {
-    must(
-      await tools.create('hands', {
-        roundId,
-        userId: userInSeat(game, seat),
-        cardIds: JSON.stringify(dealt.hands[seat].map((c) => c.id)),
-      }),
-      `Dealing the ${seat}'s hand`,
-    )
-  }
-  must(await tools.create('solution', { roundId, ...dealt.envelope }), 'Sealing the envelope')
-
-  // 4. Open the round: the starter alternates by round number.
-  const starter = starterForRound(number)
-  must(
-    await tools.update('rounds', roundId, {
-      status: 'playing',
-      faceUpCardId: dealt.faceUp.id,
-      starter,
-      turnUserId: userInSeat(game, starter),
-    }),
-    `Opening round ${number}`,
-  )
-  must(await tools.update('games', game.id, { status: 'playing', currentRound: number }), 'Updating the game')
-  return roundId
+/** A game's round by number, or undefined. */
+async function findRound(tools: ActionTools, gameId: string, number: number) {
+  const found = must(await tools.query('rounds', { where: { gameId, number }, limit: 1 }), 'Loading the round')
+  return found.records[0]
 }
 
 // ---------------------------------------------------------------------------
@@ -122,8 +63,9 @@ async function startRound(tools: ActionTools, game: Game, number: number, usedSe
 
 /**
  * createGame({ bestOf }): the caller becomes the host of a new game in the lobby.
- * Returns the game id and the join code for the guest. The code is stored in
- * join_codes, which only the host can read (R32).
+ * The code is stored in join_codes, which only the host can read (R32).
+ * Round 1 is prepared at once (setting and questions), so both players can
+ * answer in the lobby. Returns the game id, the join code, and round 1's id.
  */
 const createGame = action(async ({ userId, params, tools }) => {
   const bestOf = params.bestOf
@@ -148,12 +90,14 @@ const createGame = action(async ({ userId, params, tools }) => {
     await tools.create('players', { gameId, userId, displayName: await displayName(tools, userId), seat: 'host' }),
     'Adding the host',
   )
-  return { gameId, code, userId }
+  const roundId = await prepareRound(tools, await loadGame(tools, gameId), 1)
+  return { gameId, code, userId, roundId }
 })
 
 /**
  * joinGame({ code }): the caller becomes the guest of the game with that code.
- * The game must be in the lobby, have no guest yet, and not be hosted by the caller.
+ * The game must be in the lobby, have no guest yet, and not be hosted by the
+ * caller. The guest's round-1 questions become theirs.
  */
 const joinGame = action(async ({ userId, params, tools }) => {
   const code = typeof params.code === 'string' ? params.code.trim().toUpperCase() : ''
@@ -177,24 +121,71 @@ const joinGame = action(async ({ userId, params, tools }) => {
     }),
     'Adding the guest',
   )
-  return { gameId: game.id, userId }
+
+  // Claim the guest's questions for round 1.
+  const round1 = await findRound(tools, game.id, 1)
+  if (round1) {
+    const rows = must(
+      await tools.query('questions', { where: { roundId: round1.recordId, seat: 'guest' }, limit: 1 }),
+      'Loading your questions',
+    )
+    const row = rows.records[0]
+    if (row) must(await tools.update('questions', row.recordId, { userId }), 'Claiming your questions')
+  }
+  return { gameId: game.id, userId, roundId: round1?.recordId ?? '' }
 })
 
-/** startSeries({ gameId }): the host starts round 1 once a guest has joined. */
+/**
+ * submitAnswers({ roundId, answers: [{ questionId, answer }] }): a player
+ * answers their 2 questions, once. Each question id must be one prepared for
+ * the caller, and each answer one of that question's 4 options.
+ */
+const submitAnswers = action(async ({ userId, params, tools }) => {
+  const roundId = textParam(params, 'roundId')
+  const round = await loadRound(tools, roundId)
+  const game = await loadGame(tools, round.gameId)
+  const seat = requireSeat(game, userId)
+  if (round.status !== 'answering') refuse('This case is no longer taking answers.')
+  if (seat === 'host' ? round.hostAnswered : round.guestAnswered) refuse('You have already answered.')
+
+  const rows = must(await tools.query('questions', { where: { roundId, userId }, limit: 1 }), 'Loading your questions')
+  if (rows.records.length === 0) refuse('Your questions are not ready yet.')
+  const questions = JSON.parse(String(rows.records[0].data.questions)) as StoredQuestion[]
+
+  const given = params.answers
+  if (!Array.isArray(given) || given.length !== questions.length) refuse(`Answer all ${questions.length} questions.`)
+  const stored: StoredAnswer[] = questions.map((q) => {
+    const match = (given as { questionId?: unknown; answer?: unknown }[]).find((a) => a.questionId === q.id)
+    if (!match) refuse('Answer each of your own questions.')
+    if (typeof match.answer !== 'string' || !q.answers.includes(match.answer)) {
+      refuse('Each answer must be one of the offered options.')
+    }
+    return { questionId: q.id, question: q.text, answer: match.answer }
+  })
+
+  must(await tools.create('answers', { roundId, userId, answers: JSON.stringify(stored) }), 'Saving your answers')
+  const flag: Record<string, number> = { [seat === 'host' ? 'hostAnswered' : 'guestAnswered']: 1 }
+  must(await tools.update('rounds', roundId, flag), 'Marking you as answered')
+  return { roundId }
+})
+
+/** startSeries({ gameId }): the host starts round 1 once a guest has joined and both have answered. */
 const startSeries = action(async ({ userId, params, tools }) => {
   const game = await loadGame(tools, textParam(params, 'gameId'))
   if (game.host !== userId) refuse('Only the host can start the series.')
   if (game.guest === '') refuse('Wait for your opponent to join.')
   if (game.status !== 'lobby') refuse('This series has already started.')
 
-  const roundId = await startRound(tools, game, 1, [])
-  return { gameId: game.id, roundId }
+  const round1 = await findRound(tools, game.id, 1)
+  if (!round1) throw new Error('Round 1 was never prepared.')
+  await openRound(tools, game, round1.recordId)
+  return { gameId: game.id, roundId: round1.recordId }
 })
 
 /**
- * nextRound({ gameId }): the host starts the next round, after the current
- * one is revealed and while nobody has won the series. The setting is new to
- * this series.
+ * nextRound({ gameId }): the host opens the next case, after the current one
+ * is revealed, while nobody has won the series, and once both players have
+ * answered its questions (it was prepared at the reveal).
  */
 const nextRound = action(async ({ userId, params, tools }) => {
   const game = await loadGame(tools, textParam(params, 'gameId'))
@@ -202,13 +193,19 @@ const nextRound = action(async ({ userId, params, tools }) => {
   if (game.status === 'finished') refuse('The series is over.')
   if (game.status !== 'playing') refuse('The series has not started.')
 
-  const rounds = must(await tools.query('rounds', { where: { gameId: game.id }, limit: 50 }), 'Loading the rounds')
-  const current = rounds.records.find((r) => Number(r.data.number) === game.currentRound)
+  const current = await findRound(tools, game.id, game.currentRound)
   if (!current || current.data.status !== 'revealed') refuse('Finish the current round first.')
+  const next = await findRound(tools, game.id, game.currentRound + 1)
+  if (!next) refuse('The next case is not ready yet.')
 
-  const usedSettingIds = rounds.records.map((r) => String(r.data.settingId))
-  const roundId = await startRound(tools, game, game.currentRound + 1, usedSettingIds)
-  return { gameId: game.id, roundId }
+  await openRound(tools, game, next.recordId)
+  return { gameId: game.id, roundId: next.recordId }
 })
 
-export const gameActions: Record<string, ActionHandler<Env>> = { createGame, joinGame, startSeries, nextRound }
+export const gameActions: Record<string, ActionHandler<Env>> = {
+  createGame,
+  joinGame,
+  submitAnswers,
+  startSeries,
+  nextRound,
+}

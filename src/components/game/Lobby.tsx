@@ -1,19 +1,24 @@
 /**
- * LOBBY: both players (live), the join code for the host only, and the
- * host's Start button once a guest has joined.
+ * LOBBY: both players (live), the join code for the host only, my round-1
+ * questions, and the host's Start button, enabled once a guest has joined
+ * and both players have answered. While the AI writes the case, both
+ * players see "Writing your case...".
  */
 
 import { Button } from '@/components/ui'
 import { useAction } from '@/lib/actions'
 import { FileLabel, InlineError } from './CardView'
+import { answeredFlags, QuestionsPanel, WritingCase } from './QuestionsPanel'
 import type { GameView } from './useGameData'
 
 export function Lobby({ view }: { view: GameView }) {
-  const { game, mySeat, players, joinCode, nameOf } = view
+  const { game, mySeat, players, joinCode, nameOf, prepRound } = view
   const start = useAction()
   if (!game) return null
   const isHost = mySeat === 'host'
   const guestJoined = game.guest !== ''
+  const writing = prepRound?.status === 'generating'
+  const bothAnswered = prepRound ? answeredFlags(view, prepRound).both : false
 
   return (
     <section data-testid="lobby" className="space-y-6">
@@ -54,28 +59,39 @@ export function Lobby({ view }: { view: GameView }) {
         </ul>
       </div>
 
-      {isHost ? (
-        guestJoined ? (
-          <div>
-            <Button
-              data-testid="start-series"
-              size="lg"
-              className="w-full"
-              loading={start.pending}
-              onClick={() => start.run('startSeries', { gameId: view.gameId })}
-            >
-              Start the first case
-            </Button>
-            <InlineError message={start.error} />
-          </div>
-        ) : (
-          <p className="text-muted-foreground">You can start once your opponent joins with the code.</p>
-        )
+      {writing ? (
+        <WritingCase />
       ) : (
-        <p data-testid="lobby-waiting" className="text-muted-foreground">
-          Waiting for {nameOf(game.host)} to start the first case.
-        </p>
+        prepRound && <QuestionsPanel view={view} round={prepRound} />
       )}
+
+      {!writing &&
+        (isHost ? (
+          guestJoined ? (
+            <div>
+              <Button
+                data-testid="start-series"
+                size="lg"
+                className="w-full"
+                disabled={!bothAnswered}
+                loading={start.pending}
+                onClick={() => start.run('startSeries', { gameId: view.gameId })}
+              >
+                Start the first case
+              </Button>
+              {!bothAnswered && (
+                <p className="mt-2 text-sm text-muted-foreground">You can start once you both have answered.</p>
+              )}
+              <InlineError message={start.error} />
+            </div>
+          ) : (
+            <p className="text-muted-foreground">You can start once your opponent joins with the code.</p>
+          )
+        ) : (
+          <p data-testid="lobby-waiting" className="text-muted-foreground">
+            Waiting for {nameOf(game.host)} to start the first case.
+          </p>
+        ))}
     </section>
   )
 }

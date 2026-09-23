@@ -21,7 +21,7 @@ async function pickFirst(page: Page, triggerTestId: string) {
 }
 
 test('create, join, lobby, start, table, and a guess seen by both players', async ({ users }) => {
-  test.setTimeout(120_000)
+  test.setTimeout(300_000)
   const [alice, bob] = await users(['Alice', 'Bob'])
 
   // Alice creates a best-of-3 game and is shown the join code.
@@ -44,10 +44,24 @@ test('create, join, lobby, start, table, and a guess seen by both players', asyn
   }
   await expect(bob.page.getByTestId('join-code'), 'only the host sees the code').toHaveCount(0)
 
-  // Alice starts; both see the table.
+  // Each player answers their 2 questions by tapping, then locks them in.
+  await expect(alice.page.getByTestId('start-series'), 'no start before both answer').toBeDisabled()
+  for (const u of [alice, bob]) {
+    const questions = u.page.getByTestId('question')
+    await expect(questions, `${u.name} gets 2 questions`).toHaveCount(2, { timeout: 30_000 })
+    for (let i = 0; i < 2; i++) await questions.nth(i).getByTestId('answer-option').first().click()
+    await u.page.getByTestId('submit-answers').click()
+    await expect(u.page.getByTestId('my-answers'), `${u.name}'s answers are locked in`).toBeVisible(T)
+  }
+  for (const u of [alice, bob]) {
+    await expect(u.page.getByTestId('opponent-answered')).toHaveAttribute('data-answered', 'true', T)
+  }
+
+  // Alice starts; the AI writes the case; both see the table.
+  await expect(alice.page.getByTestId('start-series')).toBeEnabled(T)
   await alice.page.getByTestId('start-series').click()
   for (const u of [alice, bob]) {
-    await expect(u.page.getByTestId('table'), `${u.name} sees the table`).toBeVisible(T)
+    await expect(u.page.getByTestId('table'), `${u.name} sees the table`).toBeVisible({ timeout: 90_000 })
     await expect(u.page.getByTestId('case-title')).not.toBeEmpty()
     await expect(u.page.getByTestId('score-host')).toHaveText('0')
     await expect(u.page.getByTestId('score-guest')).toHaveText('0')

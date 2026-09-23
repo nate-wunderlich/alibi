@@ -11,7 +11,7 @@
  * Needs the test accounts named "Alice" and "Bob" in the local registry.
  */
 import { test, expect } from 'deepspace/testing'
-import { callAction, visibleRecords, type RecordRow } from './helpers/game'
+import { answerMyQuestions, callAction, visibleRecords, type RecordRow } from './helpers/game'
 
 /** Every received hands row must belong to the viewer: exactly 1, theirs, with 4 cards, and none of the other player's. */
 function expectOnlyOwnHand(hands: RecordRow[], viewer: string, viewerId: string, otherId: string) {
@@ -27,6 +27,7 @@ function expectOnlyOwnHand(hands: RecordRow[], viewer: string, viewerId: string,
 test('each player receives only their own hand, nobody receives the solution, only the host sees the join code', async ({
   users,
 }) => {
+  test.setTimeout(240_000)
   const [alice, bob] = await users(['Alice', 'Bob'])
   await Promise.all([alice.page.goto('/home'), bob.page.goto('/home')])
   for (const u of [alice, bob]) {
@@ -34,17 +35,22 @@ test('each player receives only their own hand, nobody receives the solution, on
   }
 
   // Alice creates a game. The code comes back to her in the action result.
-  const created = await callAction<{ gameId: string; code: string; userId: string }>(alice.page, 'createGame', {
-    bestOf: 3,
-  })
+  const created = await callAction<{ gameId: string; code: string; userId: string; roundId: string }>(
+    alice.page,
+    'createGame',
+    { bestOf: 3 },
+  )
   expect(created.error).toBeUndefined()
   expect(created.success).toBe(true)
-  const { gameId, code, userId: aliceId } = created.data!
+  const { gameId, code, userId: aliceId, roundId: round1Id } = created.data!
 
-  // Before joining, Bob is not a member: the code must not reach his browser by any subscription.
-  const bobBeforeJoin = await visibleRecords(bob.page, '', gameId)
+  // Before joining, Bob is not a member: the code must not reach his browser by
+  // any subscription, and neither may any round-1 questions (the guest's row
+  // is unclaimed until he joins).
+  const bobBeforeJoin = await visibleRecords(bob.page, round1Id, gameId)
   expect.soft(bobBeforeJoin.join_codes.rows, 'Bob should receive no join_codes row for this game').toHaveLength(0)
   expect.soft(bobBeforeJoin.allText, 'the join code should appear nowhere in what Bob receives').not.toContain(code)
+  expect.soft(bobBeforeJoin.questions.rows, 'Bob should receive no questions before joining').toHaveLength(0)
 
   // The host does see it (a positive control, so the check above is not passing by accident).
   const aliceLobby = await visibleRecords(alice.page, '', gameId)
@@ -56,6 +62,10 @@ test('each player receives only their own hand, nobody receives the solution, on
   expect(joined.error).toBeUndefined()
   expect(joined.success).toBe(true)
   const bobId = joined.data!.userId
+
+  // Both answer their round-1 questions (the case is built from them).
+  await answerMyQuestions(alice.page, round1Id, gameId)
+  await answerMyQuestions(bob.page, round1Id, gameId)
 
   // Bob tries to start Alice's game: refused, and the game is unchanged.
   const hijack = await callAction(bob.page, 'startSeries', { gameId })
@@ -78,10 +88,20 @@ test('each player receives only their own hand, nobody receives the solution, on
   expect.soft(asBob.solution.rows, 'Bob should receive 0 solution rows').toHaveLength(0)
   expect.soft(asBob.join_codes.rows, 'Bob should receive no join_codes row').toHaveLength(0)
   expect.soft(asBob.allText, 'the join code should appear nowhere in what Bob receives').not.toContain(code)
+  for (const kind of ['questions', 'answers'] as const) {
+    const rows = asBob[kind].rows
+    expect.soft(rows.filter((r) => r.data.userId === aliceId), `Bob should receive 0 of Alice's ${kind} rows`).toHaveLength(0)
+    expect.soft(rows.filter((r) => r.data.userId === bobId), `Bob should receive his own ${kind} row`).toHaveLength(1)
+  }
 
   const asAlice = await visibleRecords(alice.page, roundId, gameId)
   expectOnlyOwnHand(asAlice.hands.rows, 'Alice', aliceId, bobId)
   expect.soft(asAlice.solution.rows, 'Alice should receive 0 solution rows').toHaveLength(0)
+  for (const kind of ['questions', 'answers'] as const) {
+    const rows = asAlice[kind].rows
+    expect.soft(rows.filter((r) => r.data.userId === bobId), `Alice should receive 0 of Bob's ${kind} rows`).toHaveLength(0)
+    expect.soft(rows.filter((r) => r.data.userId === aliceId), `Alice should receive her own ${kind} row`).toHaveLength(1)
+  }
 
   // Notes (the detective grid): each player writes one through the real grid,
   // then receives only their own row, never the other player's.

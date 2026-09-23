@@ -20,7 +20,7 @@ export default function GamePage() {
   else if (!game || !mySeat) body = <NotYours />
   else if (game.status === 'lobby') body = <Lobby view={view} />
   else if (game.status === 'finished') body = <SeriesEnd view={view} />
-  else if (!round || round.status === 'generating' || round.status === 'ready') body = <Preparing />
+  else if (!round || (round.status !== 'playing' && round.status !== 'revealed')) body = <Preparing />
   else if (round.status === 'revealed') body = <Reveal view={view} round={round} />
   else body = <Table view={view} round={round} />
 
