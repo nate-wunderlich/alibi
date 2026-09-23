@@ -44,7 +44,6 @@ function action(body: (ctx: ActionContext<Env>) => Promise<unknown>): ActionHand
 }
 
 interface GameRow {
-  code: string
   host: string
   guest: string
   bestOf: number
@@ -86,7 +85,7 @@ function randomCode(): string {
 async function uniqueCode(tools: ActionTools): Promise<string> {
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = randomCode()
-    const existing = must(await tools.query('games', { where: { code }, limit: 1 }), 'Checking the join code')
+    const existing = must(await tools.query('join_codes', { where: { code }, limit: 1 }), 'Checking the join code')
     if (existing.records.length === 0) return code
   }
   throw new Error('Could not find a free join code. Please try again.')
@@ -98,7 +97,8 @@ async function uniqueCode(tools: ActionTools): Promise<string> {
 
 /**
  * createGame({ bestOf }): the caller becomes the host of a new game in the lobby.
- * Returns the game id and the join code for the guest.
+ * Returns the game id and the join code for the guest. The code is stored in
+ * join_codes, which only the host can read (R32).
  */
 const createGame = action(async ({ userId, params, tools }) => {
   const bestOf = params.bestOf
@@ -107,7 +107,6 @@ const createGame = action(async ({ userId, params, tools }) => {
   const code = await uniqueCode(tools)
   const { recordId: gameId } = must(
     await tools.create('games', {
-      code,
       host: userId,
       guest: '',
       bestOf,
@@ -119,6 +118,7 @@ const createGame = action(async ({ userId, params, tools }) => {
     }),
     'Creating the game',
   )
+  must(await tools.create('join_codes', { gameId, code, hostId: userId }), 'Saving the join code')
   must(
     await tools.create('players', {
       gameId,
@@ -139,26 +139,26 @@ const joinGame = action(async ({ userId, params, tools }) => {
   const code = typeof params.code === 'string' ? params.code.trim().toUpperCase() : ''
   if (code === '') refuse('A join code is required.')
 
-  const found = must(await tools.query('games', { where: { code }, limit: 1 }), 'Looking up the code')
+  const found = must(await tools.query('join_codes', { where: { code }, limit: 1 }), 'Looking up the code')
   if (found.records.length === 0) refuse('No game has that code.')
-  const record = found.records[0]
-  const game = record.data as unknown as GameRow
+  const gameId = String(found.records[0].data.gameId)
+  const game = await loadGame(tools, gameId)
 
   if (game.status !== 'lobby') refuse('That game has already started.')
   if (game.host === userId) refuse('You are the host of this game; share the code with your opponent.')
   if (game.guest !== '') refuse('That game already has two players.')
 
-  must(await tools.update('games', record.recordId, { guest: userId }), 'Joining the game')
+  must(await tools.update('games', gameId, { guest: userId }), 'Joining the game')
   must(
     await tools.create('players', {
-      gameId: record.recordId,
+      gameId,
       userId,
       displayName: await displayName(tools, userId),
       seat: 'guest',
     }),
     'Adding the guest',
   )
-  return { gameId: record.recordId, userId }
+  return { gameId, userId }
 })
 
 /**

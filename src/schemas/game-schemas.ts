@@ -27,11 +27,19 @@ const signedInReadOnly: Record<string, RolePermissions> = {
   '*': NO_ACCESS,
 }
 
+/** Signed-in users may read only rows they own (the schema's ownerField); nobody may write. */
+const OWN_READ_ONLY: RolePermissions = { read: 'own', create: false, update: false, delete: false }
+const signedInOwnReadOnly: Record<string, RolePermissions> = {
+  viewer: OWN_READ_ONLY,
+  member: OWN_READ_ONLY,
+  admin: OWN_READ_ONLY,
+  '*': NO_ACCESS,
+}
+
 /** A series between a host and a guest. Status: lobby -> playing -> finished. */
 export const gamesSchema: CollectionSchema = {
   name: 'games',
   columns: [
-    text('code'),
     text('host'),
     text('guest'),
     number('bestOf'),
@@ -84,24 +92,38 @@ export const cardsSchema: CollectionSchema = {
  * It is deliberately NOT `userBound`: that would force it to the caller
  * (the host) for both rows.
  *
- * TEMPORARY: permissive for the red secrecy test (D10). D11 locks this per R29.
+ * R29: each player reads only their own hand.
  */
 export const handsSchema: CollectionSchema = {
   name: 'hands',
   columns: [text('roundId'), text('userId'), text('cardIds')],
   ownerField: 'userId',
-  permissions: signedInReadOnly,
+  permissions: signedInOwnReadOnly,
 }
 
 /**
  * The envelope for a round: one suspect, one weapon, one location (card ids).
  *
- * TEMPORARY: permissive for the red secrecy test (D10). D11 locks this per R29.
+ * R29: no client may read it, the app owner included. Only a '*' entry, all
+ * false: every role falls back to it. Server actions still read it.
  */
 export const solutionSchema: CollectionSchema = {
   name: 'solution',
   columns: [text('roundId'), text('suspect'), text('weapon'), text('location')],
-  permissions: signedInReadOnly,
+  permissions: { '*': NO_ACCESS },
+}
+
+/**
+ * A game's join code, kept out of `games` so only the host can read it.
+ *
+ * R32: readable only by the host (hostId); a lobby could otherwise be joined
+ * by any signed-in user.
+ */
+export const joinCodesSchema: CollectionSchema = {
+  name: 'join_codes',
+  columns: [text('gameId'), text('code'), text('hostId')],
+  ownerField: 'hostId',
+  permissions: signedInOwnReadOnly,
 }
 
 export const gameSchemas: CollectionSchema[] = [
@@ -111,4 +133,5 @@ export const gameSchemas: CollectionSchema[] = [
   cardsSchema,
   handsSchema,
   solutionSchema,
+  joinCodesSchema,
 ]
