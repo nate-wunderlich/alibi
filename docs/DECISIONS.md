@@ -110,6 +110,22 @@ R33. After a guess resolves, the active player either accuses
     immediately or calls endTurn. A turn cannot end without a guess.
     Only one guess per turn.
 R34. Generated media (suspect portraits, narration audio) is stored from server code, never by a browser: one helper in src/server/media.ts uploads base64 with platformWorkerFetch to POST /internal/files/upload?scope=app with the app identity headers (x-app-identity-token, x-app-id) and a real x-user-id (the game's host). Records store the relative path /api/files/<key>?scope=app, never the URL the platform returns (it 404s on the platform host; measured D23). 'app' scope is public by key: fine for portraits (card faces are not secret) and for the confession audio (created only at the reveal). Reason: keeps every paid call server-triggered (R12), no client trust, no multi-MB action payloads. Measured by the D23 spike (upload 200, app-origin fetch 200 image/png, delete 200, then 404).
+R35. Suspect portraits run in ONE background job per round, off the
+    request path. After the case is written (openRound), the action
+    calls enqueueJob(env.JOB_ROOMS, 'app:<DEEPSPACE_APP_ID>',
+    'portraits', { roundId }, { enqueuedBy: <host user id>, maxAttempts:
+    2 }). The job uses buildCronContext(env, hostId,
+    'app:<DEEPSPACE_APP_ID>') for records and for openai/generate-image
+    (billed to the app owner), makes the 4 suspect portraits in parallel
+    (model gpt-image-1-mini set explicitly, quality low), stores each
+    with uploadMedia (R34), and sets that card's imageUrl. It skips any
+    card that already has an imageUrl, so a retry never pays twice. A
+    failed portrait stays a placeholder and never blocks play (R7).
+    Automated tests never call image generation (the job is not enqueued
+    under test); real art is verified on the live two-window gate.
+    buildCronContext is documented for cron only; its use from a job was
+    proven by the D27 spike (enqueue to finish 2.4s, writes visible to
+    normal action tools).
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
