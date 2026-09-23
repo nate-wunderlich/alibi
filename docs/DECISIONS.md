@@ -101,8 +101,13 @@ R30. Reveal: at round end, the reveal action copies the solution, both
 R31. AI text calls use tools.integration('anthropic/chat-completion')
     inside server actions, with model claude-haiku-4-5 set explicitly
     (the default is claude-sonnet-5, which is off standard pricing).
+R32. Join codes live in join_codes, readable only by the host (a lobby
+    could otherwise be joined by any signed-in user). games, players,
+    rounds, and cards stay readable by any signed-in user; they hold no
+    secrets, and narrowing them to the two players is a named known edge
+    for the writeup.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
-- [CONFIRM D3] RBAC expressiveness for owner-only and no-client rows.
-- [CONFIRM D3] deepspace/worker AI helpers vs the integration client.
+- [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
+- [CLOSED by D8] deepspace/worker AI helpers vs the integration client. tools.integration; see R31.
