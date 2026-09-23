@@ -67,6 +67,7 @@ export const PROBE_SECTIONS = [
   'cards',
   'guesses',
   'shown_cards',
+  'notes',
 ] as const
 export type ProbeSection = (typeof PROBE_SECTIONS)[number]
 

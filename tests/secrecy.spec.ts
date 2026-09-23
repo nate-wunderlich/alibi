@@ -82,4 +82,33 @@ test('each player receives only their own hand, nobody receives the solution, on
   const asAlice = await visibleRecords(alice.page, roundId, gameId)
   expectOnlyOwnHand(asAlice.hands.rows, 'Alice', aliceId, bobId)
   expect.soft(asAlice.solution.rows, 'Alice should receive 0 solution rows').toHaveLength(0)
+
+  // Notes (the detective grid): each player writes one through the real grid,
+  // then receives only their own row, never the other player's.
+  for (const u of [alice, bob]) {
+    await u.page.goto(`/game/${gameId}`)
+    const openCell = u.page.locator('[data-testid="grid-cell"][data-fixed="false"]').first()
+    await openCell.click()
+    await expect(openCell, `${u.name}'s tap is recorded`).toHaveAttribute('data-mark', 'has', { timeout: 15_000 })
+  }
+  for (const [viewer, viewerId, otherId] of [
+    [bob, bobId, aliceId],
+    [alice, aliceId, bobId],
+  ] as const) {
+    // The first tap creates the row asynchronously; re-read until the viewer's own row has landed.
+    await expect
+      .poll(
+        async () =>
+          (await visibleRecords(viewer.page, roundId, gameId)).notes.rows.some((row) => row.data.userId === viewerId),
+        { message: `${viewer.name}'s own notes row should arrive`, timeout: 15_000 },
+      )
+      .toBe(true)
+    const seen = await visibleRecords(viewer.page, roundId, gameId)
+    expect.soft(seen.notes.rows, `${viewer.name} should receive exactly 1 notes row`).toHaveLength(1)
+    for (const row of seen.notes.rows) {
+      expect.soft(row.data.userId, `every notes row ${viewer.name} receives should be theirs`).toBe(viewerId)
+    }
+    const foreign = seen.notes.rows.filter((row) => row.data.userId === otherId)
+    expect.soft(foreign, `${viewer.name} should receive no notes row of the other player`).toHaveLength(0)
+  }
 })
