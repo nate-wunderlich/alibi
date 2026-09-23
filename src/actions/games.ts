@@ -97,7 +97,10 @@ const createGame = action(async ({ userId, params, tools }) => {
 /**
  * joinGame({ code }): the caller becomes the guest of the game with that code.
  * The game must be in the lobby, have no guest yet, and not be hosted by the
- * caller. The guest's round-1 questions become theirs.
+ * caller. The guest's round-1 questions, held in an unowned row nobody can
+ * read, are copied into a NEW row owned by the guest from the start, and the
+ * unowned row is deleted. Ownership is never transferred (D19: a row created
+ * with its owner reaches that owner's screen live, the same way the host's does).
  */
 const joinGame = action(async ({ userId, params, tools }) => {
   const code = typeof params.code === 'string' ? params.code.trim().toUpperCase() : ''
@@ -122,15 +125,26 @@ const joinGame = action(async ({ userId, params, tools }) => {
     'Adding the guest',
   )
 
-  // Claim the guest's questions for round 1.
+  // Give the guest their round-1 questions in a row they own from creation.
   const round1 = await findRound(tools, game.id, 1)
   if (round1) {
     const rows = must(
-      await tools.query('questions', { where: { roundId: round1.recordId, seat: 'guest' }, limit: 1 }),
+      await tools.query('questions', { where: { roundId: round1.recordId, seat: 'guest', userId: '' }, limit: 1 }),
       'Loading your questions',
     )
-    const row = rows.records[0]
-    if (row) must(await tools.update('questions', row.recordId, { userId }), 'Claiming your questions')
+    const unowned = rows.records[0]
+    if (unowned) {
+      must(
+        await tools.create('questions', {
+          roundId: round1.recordId,
+          seat: 'guest',
+          userId,
+          questions: String(unowned.data.questions),
+        }),
+        'Writing your questions',
+      )
+      must(await tools.remove('questions', unowned.recordId), 'Retiring the unassigned questions')
+    }
   }
   return { gameId: game.id, userId, roundId: round1?.recordId ?? '' }
 })

@@ -32,10 +32,23 @@ test('create, join, lobby, start, table, and a guess seen by both players', asyn
   await expect(codeEl).toHaveText(/^[A-Z0-9]{6}$/, T)
   const code = (await codeEl.textContent())!.trim()
 
+  // A second Bob tab already has the game page open before he joins (mirrors
+  // the live gate, where the guest's page was subscribed before the claim).
+  // It must switch to the lobby and show his questions WITHOUT a reload.
+  const gameId = new URL(alice.page.url()).pathname.split('/').pop()!
+  const bobEarly = await bob.context.newPage()
+  await bobEarly.goto(`/game/${gameId}`)
+  await expect(bobEarly.getByRole('heading', { name: 'No such case file' })).toBeVisible(T)
+
   // Bob joins with the code.
   await bob.page.goto('/home')
   await bob.page.getByTestId('join-code-input').fill(code)
   await bob.page.getByTestId('join-game').click()
+
+  // D19: the guest's 2 questions appear within 15s of joining, with no reload, in both tabs.
+  await expect(bob.page.getByTestId('question'), "the guest's questions appear live").toHaveCount(2, T)
+  await expect(bobEarly.getByTestId('question'), 'the already-open tab gets them live too').toHaveCount(2, T)
+  await bobEarly.close()
 
   // Both see the lobby with both players.
   for (const u of [alice, bob]) {

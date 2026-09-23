@@ -3,14 +3,19 @@
  * "Before every round"). Shown in the LOBBY for round 1 and on the REVEAL for
  * the next case. My answers stay hidden from my opponent until that case's
  * reveal; they only see that I have answered.
+ *
+ * This panel owns the questions and answers subscriptions, and callers render
+ * it with key={round.id}: each subscription is created once, for a known
+ * round id, and never has to follow a changing `where` (D19).
  */
 
 import { useState } from 'react'
+import { useQuery } from 'deepspace'
 import { Button } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { useAction } from '@/lib/actions'
 import { FileLabel, InlineError } from './CardView'
-import type { GameView, Round } from './useGameData'
+import type { GameView, Round, StoredAnswer, StoredQuestion } from './useGameData'
 
 /** Whether each seat has locked in its answers for a round. */
 export function answeredFlags(view: GameView, round: Round) {
@@ -37,7 +42,11 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
   const [picks, setPicks] = useState<Record<string, string>>({})
   const submit = useAction()
   const { iAnswered, opponentAnswered } = answeredFlags(view, round)
-  const questions = view.myQuestions
+  // Only my own rows arrive (owner-only; R29).
+  const questionRows = useQuery<{ questions: string }>('questions', { where: { roundId: round.id } })
+  const answerRows = useQuery<{ answers: string }>('answers', { where: { roundId: round.id } })
+  const questions: StoredQuestion[] = questionRows.records[0] ? JSON.parse(questionRows.records[0].data.questions) : []
+  const myAnswers: StoredAnswer[] = answerRows.records[0] ? JSON.parse(answerRows.records[0].data.answers) : []
   const complete = questions.length > 0 && questions.every((q) => picks[q.id])
 
   return (
@@ -46,7 +55,7 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
 
       {iAnswered ? (
         <ul data-testid="my-answers" className="space-y-2">
-          {view.myAnswers.map((a) => (
+          {myAnswers.map((a) => (
             <li key={a.questionId} className="rounded-sm border border-border bg-card px-3 py-2 text-sm">
               <div className="text-muted-foreground">{a.question}</div>
               <div className="font-semibold">{a.answer}</div>

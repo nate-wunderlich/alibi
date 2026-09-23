@@ -223,8 +223,9 @@ export const notesSchema: CollectionSchema = {
 /**
  * Each player's 2 case questions for a round (R25), JSON:
  * [{ id, text, answers: [4 options] }]. Written by the server when the round
- * is prepared. The guest's row is written with seat 'guest' and an empty
- * userId, and claimed when the guest joins, so nobody reads it before then.
+ * is prepared. Before the guest joins, their round-1 row has an empty userId,
+ * so nobody can read it; joinGame copies it into a new row owned by the guest
+ * and deletes the unowned one (ownership is never transferred).
  * R29: owner only; no client writes.
  */
 export const questionsSchema: CollectionSchema = {

@@ -62,7 +62,7 @@ export function Lobby({ view }: { view: GameView }) {
       {writing ? (
         <WritingCase />
       ) : (
-        prepRound && <QuestionsPanel view={view} round={prepRound} />
+        prepRound && <QuestionsPanel key={prepRound.id} view={view} round={prepRound} />
       )}
 
       {!writing &&
