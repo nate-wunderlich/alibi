@@ -109,6 +109,7 @@ R32. Join codes live in join_codes, readable only by the host (a lobby
 R33. After a guess resolves, the active player either accuses
     immediately or calls endTurn. A turn cannot end without a guess.
     Only one guess per turn.
+R34. Generated media (suspect portraits, narration audio) is stored from server code, never by a browser: one helper in src/server/media.ts uploads base64 with platformWorkerFetch to POST /internal/files/upload?scope=app with the app identity headers (x-app-identity-token, x-app-id) and a real x-user-id (the game's host). Records store the relative path /api/files/<key>?scope=app, never the URL the platform returns (it 404s on the platform host; measured D23). 'app' scope is public by key: fine for portraits (card faces are not secret) and for the confession audio (created only at the reveal). Reason: keeps every paid call server-triggered (R12), no client trust, no multi-MB action payloads. Measured by the D23 spike (upload 200, app-origin fetch 200 image/png, delete 200, then 404).
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
