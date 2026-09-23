@@ -69,4 +69,68 @@ test('create, join, lobby, start, table, and a guess seen by both players', asyn
   for (const u of [alice, bob]) {
     await expect(u.page.getByTestId('round-log-entry'), `${u.name} sees the guess in the log`).toHaveCount(1, T)
   }
+
+  // If Bob holds two or three of the named cards, he chooses one to show.
+  const aliceEntry = alice.page.getByTestId('round-log-entry').first()
+  if ((await aliceEntry.getAttribute('data-result')) === 'pending') {
+    await bob.page.getByTestId('show-card').first().click()
+  }
+  await expect(aliceEntry, "Alice's guess resolves").toHaveAttribute('data-result', /^(shown|none)$/, T)
+
+  // Detective grid (SPEC.md "Detective grid"): what Alice provably knows is pre-filled and locked.
+  const cardIds = async (page: Page, testId: string) =>
+    page.getByTestId(testId).evaluateAll((els) => els.map((el) => el.getAttribute('data-card-id') ?? ''))
+  const aliceHand = await cardIds(alice.page, 'hand-card')
+  const bobHand = await cardIds(bob.page, 'hand-card')
+  const [faceUp] = await cardIds(alice.page, 'face-up-card')
+  const shown = (await aliceEntry.getAttribute('data-shown-card-id')) ?? ''
+  expect(aliceHand).toHaveLength(4)
+
+  const cell = (page: Page, cardId: string, column: 'me' | 'opponent' | 'envelope') =>
+    page.locator(`[data-testid="grid-row"][data-card-id="${cardId}"] [data-testid="grid-cell"][data-column="${column}"]`)
+
+  await expect(alice.page.getByTestId('detective-grid')).toBeVisible(T)
+  await expect(alice.page.getByTestId('grid-row'), 'the grid lists all 12 cards').toHaveCount(12)
+
+  // Phone-first: at 390px wide the grid fits and the page does not scroll sideways.
+  await alice.page.setViewportSize({ width: 390, height: 844 })
+  const gridBox = await alice.page.getByTestId('detective-grid').boundingBox()
+  expect(gridBox!.x + gridBox!.width, 'the grid fits in 390px').toBeLessThanOrEqual(390)
+  expect(await alice.page.evaluate(() => document.documentElement.scrollWidth), 'no sideways scroll').toBeLessThanOrEqual(390)
+  for (const id of aliceHand) {
+    await expect(cell(alice.page, id, 'me'), 'her hand is marked "has" under Me').toHaveAttribute('data-mark', 'has')
+    await expect(cell(alice.page, id, 'me')).toHaveAttribute('data-fixed', 'true')
+  }
+  await expect(alice.page.locator(`[data-testid="grid-row"][data-card-id="${faceUp}"]`)).toHaveAttribute(
+    'data-face-up',
+    'true',
+  )
+  await expect(cell(alice.page, faceUp, 'envelope'), 'the face-up card is not in the envelope').toHaveAttribute(
+    'data-mark',
+    'no',
+  )
+  if (shown) {
+    await expect(cell(alice.page, shown, 'opponent'), 'the shown card is "has" under Opponent').toHaveAttribute(
+      'data-mark',
+      'has',
+    )
+    await expect(cell(alice.page, shown, 'opponent')).toHaveAttribute('data-fixed', 'true')
+  }
+
+  // Alice cycles an open cell: blank -> has -> doesn't -> maybe. It survives a reload.
+  const allIds = await alice.page
+    .getByTestId('grid-row')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-card-id') ?? ''))
+  const open = allIds.find((id) => !aliceHand.includes(id) && !bobHand.includes(id) && id !== faceUp && id !== shown)!
+  const target = cell(alice.page, open, 'envelope')
+  await expect(target).toHaveAttribute('data-mark', '')
+  for (const mark of ['has', 'no', 'maybe']) {
+    await target.click()
+    await expect(target).toHaveAttribute('data-mark', mark, T)
+  }
+  await alice.page.reload()
+  await expect(cell(alice.page, open, 'envelope'), 'the mark survives a reload').toHaveAttribute('data-mark', 'maybe', T)
+
+  // Bob's grid is his own: none of Alice's marks.
+  await expect(cell(bob.page, open, 'envelope'), "Bob does not see Alice's mark").toHaveAttribute('data-mark', '', T)
 })

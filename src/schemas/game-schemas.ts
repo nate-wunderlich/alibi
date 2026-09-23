@@ -1,9 +1,9 @@
 /**
  * Game collections (docs/SPEC.md, "Data and visibility").
  *
- * Clients never write any of these: every row is created and changed by a
- * server action (src/actions/games.ts), which checks the caller itself.
- * So every role has create/update/delete: false.
+ * Clients never write any of these except their own `notes` row: every
+ * other row is created and changed by a server action (src/actions/), which
+ * checks the caller itself. So every role has create/update/delete: false.
  *
  * Public game state (games, players, rounds, cards) is readable by any
  * signed-in user for now. Narrowing it to the two players in a game is
@@ -189,6 +189,29 @@ export const accusationsSchema: CollectionSchema = {
   permissions: { '*': NO_ACCESS },
 }
 
+/**
+ * Each player's detective grid for a round. `marks` is JSON:
+ * { [cardId]: { me?, opponent?, envelope? } }, each 'has' | 'no' | 'maybe'.
+ * Only the player's own taps are stored; what they provably know is
+ * worked out on screen.
+ *
+ * R29: owner only. This is the one collection clients write: a player may
+ * create their own row (userId is userBound, so it is always the creator)
+ * and update only its marks. No deletes, and no reading anyone else's.
+ */
+export const notesSchema: CollectionSchema = {
+  name: 'notes',
+  columns: [text('roundId'), { ...text('userId'), userBound: true }, text('marks')],
+  ownerField: 'userId',
+  uniqueOn: ['roundId', 'userId'],
+  permissions: {
+    viewer: { read: 'own', create: true, update: 'own', delete: false, writableFields: ['roundId', 'marks'] },
+    member: { read: 'own', create: true, update: 'own', delete: false, writableFields: ['roundId', 'marks'] },
+    admin: { read: 'own', create: true, update: 'own', delete: false, writableFields: ['roundId', 'marks'] },
+    '*': NO_ACCESS,
+  },
+}
+
 export const gameSchemas: CollectionSchema[] = [
   gamesSchema,
   playersSchema,
@@ -200,4 +223,5 @@ export const gameSchemas: CollectionSchema[] = [
   guessesSchema,
   shownCardsSchema,
   accusationsSchema,
+  notesSchema,
 ]

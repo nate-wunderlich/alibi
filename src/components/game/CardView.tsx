@@ -33,6 +33,7 @@ export function CardView({
   note?: ReactNode
   className?: string
   'data-testid'?: string
+  'data-card-id'?: string
 }) {
   if (!card) return <div className={cn('h-14 animate-pulse rounded-sm bg-muted', className)} {...props} />
   return (

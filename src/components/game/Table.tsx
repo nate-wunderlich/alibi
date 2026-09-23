@@ -2,8 +2,8 @@
  * TABLE: the round being played.
  *
  * Top to bottom: score, the case, whose turn and what I can do now (guess,
- * show a card, accuse, end turn), my hand and the face-up card, the cast,
- * and the round log. What I can do comes from the round's live fields
+ * show a card, accuse, end turn), my hand and the face-up card, my detective
+ * grid, the round log, and the cast. What I can do comes from the round's live fields
  * (turnUserId, guessedThisTurn, pendingGuessId); the server re-checks every
  * action, so these conditions only decide which controls to show.
  */
@@ -14,6 +14,7 @@ import { useAction } from '@/lib/actions'
 import type { CardKind } from '../../game/rules'
 import { SETTINGS } from '../../game/settings'
 import { CardView, FileLabel, InlineError, KIND_LABEL, KINDS } from './CardView'
+import { DetectiveGrid } from './DetectiveGrid'
 import { Scoreboard } from './Scoreboard'
 import type { Card, GameView, Guess, Round } from './useGameData'
 
@@ -52,15 +53,21 @@ export function Table({ view, round }: { view: GameView; round: Round }) {
         <FileLabel>Your hand</FileLabel>
         <div data-testid="my-hand" className="grid grid-cols-2 gap-2">
           {view.myHand.map((id) => (
-            <CardView key={id} data-testid="hand-card" card={view.cardsById.get(id)} />
+            <CardView key={id} data-testid="hand-card" data-card-id={id} card={view.cardsById.get(id)} />
           ))}
         </div>
       </div>
 
       <div>
         <FileLabel>Face up for both of you</FileLabel>
-        <CardView data-testid="face-up-card" card={view.cardsById.get(round.faceUpCardId)} />
+        <CardView
+          data-testid="face-up-card"
+          data-card-id={round.faceUpCardId}
+          card={view.cardsById.get(round.faceUpCardId)}
+        />
       </div>
+
+      <DetectiveGrid key={round.id} view={view} round={round} />
 
       <RoundLog view={view} />
 
@@ -179,7 +186,7 @@ function GuessBuilder({ view, round }: { view: GameView; round: Round }) {
 
   return (
     <div data-testid="guess-builder" className="space-y-2">
-      <p className="text-sm">Name a suspect, a method, and a place. Your opponent must show you one they hold.</p>
+      <p className="text-sm">Name a suspect, a method, and a place. If your opponent holds any of them, they must show you one.</p>
       <CardPicker view={view} pick={pick} setPick={setPick} testIdPrefix="guess" />
       <Button
         data-testid="guess-submit"
@@ -289,7 +296,13 @@ function RoundLog({ view }: { view: GameView }) {
       ) : (
         <ol className="space-y-2">
           {view.guesses.map((g) => (
-            <li key={g.id} data-testid="round-log-entry" className="rounded-sm border border-border bg-card px-3 py-2 text-sm">
+            <li
+              key={g.id}
+              data-testid="round-log-entry"
+              data-result={g.result}
+              data-shown-card-id={g.byUserId === view.myId ? (view.shownToMe.get(g.id) ?? '') : ''}
+              className="rounded-sm border border-border bg-card px-3 py-2 text-sm"
+            >
               <span className="font-semibold">{view.nameOf(g.byUserId)}</span> guessed {name(g.suspect)}, with{' '}
               {name(g.weapon)}, in {name(g.location)}.{' '}
               <span className={g.result === 'shown' && g.byUserId === view.myId ? 'text-primary' : 'text-muted-foreground'}>
