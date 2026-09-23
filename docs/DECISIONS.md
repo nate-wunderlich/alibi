@@ -89,6 +89,19 @@ R28. GitHub is alibi's source authority (DeepSpace latches the source
     noreply email, and the CLI uses a fine-grained token scoped to the
     alibi repo only. (Nate)
 
+## 2026-09-23 (Wed)
+R29. Secrecy: hands, answers, and notes use read: 'own' with an explicit
+    userId ownerField; the solution uses '*' all-false, so no client
+    (including the app owner) can read it. Clients cannot create or edit
+    any secret row; server actions write them and must check the caller
+    themselves, because actions bypass RBAC.
+R30. Reveal: at round end, the reveal action copies the solution, both
+    hands, and both players' answers into the round's public record.
+    Secret collections are never opened up.
+R31. AI text calls use tools.integration('anthropic/chat-completion')
+    inside server actions, with model claude-haiku-4-5 set explicitly
+    (the default is claude-sonnet-5, which is off standard pricing).
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CONFIRM D3] RBAC expressiveness for owner-only and no-client rows.
