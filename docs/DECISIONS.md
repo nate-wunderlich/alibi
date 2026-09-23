@@ -106,6 +106,9 @@ R32. Join codes live in join_codes, readable only by the host (a lobby
     rounds, and cards stay readable by any signed-in user; they hold no
     secrets, and narrowing them to the two players is a named known edge
     for the writeup.
+R33. After a guess resolves, the active player either accuses
+    immediately or calls endTurn. A turn cannot end without a guess.
+    Only one guess per turn.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
