@@ -221,6 +221,20 @@ R42. An alibi may name only its own card (refines R41). Each alibi is
     token of 3+ letters from another suspect's name. The prompt says so
     plainly. The name and tone guards still apply.
 
+R43. Alibis by number, card by card (refines R41, R42; D51 diagnosis:
+    the AI labelled cards "Name (kind)", so none matched, and R42's
+    wording stopped it naming its own card). (1) The prompt numbers the
+    12 cards (no kind in parentheses); the reply is {"alibis": [{"n": 1,
+    "alibi": "..."}, ...]}; code maps by number. (2) The alibi text need
+    not contain the card's name: the UI shows the card name beside each
+    alibi; the text may use a short form or a pronoun. (3) R42 stays: no
+    other card's full name, and no capitalized token of another
+    suspect's name, but tokens shared with the alibi's own card name are
+    ignored. (4) Card by card: valid alibis overwrite their templates,
+    invalid ones keep the template; one retry only if more than 3 are
+    invalid, feeding back the per-number errors; after that, keep what
+    is valid.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
