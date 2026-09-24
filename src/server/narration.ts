@@ -14,7 +14,7 @@
  */
 
 import { askForJson, integrationFromCron } from '../actions/ai'
-import { findGraphicTerm, type Prompt } from '../game/caseGen'
+import { findGraphicTerm, type AnsweredQuestion, type Prompt } from '../game/caseGen'
 import { SETTINGS } from '../game/settings'
 import { toBase64 } from './media'
 import type { PortraitDeps } from './portraits'
@@ -22,7 +22,8 @@ import type { PortraitDeps } from './portraits'
 /** Same needs as the portraits job: records, integrations, and a way to store a file. */
 export type NarrationDeps = PortraitDeps
 
-export const CONFESSION_MAX = 600
+/** R37: room for a 60-90 word confession. */
+export const CONFESSION_MAX = 700
 const TTS = { model: 'tts-1', voice: 'fable', response_format: 'mp3' } as const
 
 interface Named {
@@ -46,6 +47,8 @@ export function confessionPrompt(c: {
   culprit: Named
   method: Named
   place: Named
+  /** Both players' choices, by display name (R37). */
+  answers: AnsweredQuestion[]
 }): Prompt {
   return {
     system: [
@@ -62,9 +65,13 @@ export function confessionPrompt(c: {
       `How: ${c.method.name}. ${c.method.description}`,
       `Where: ${c.place.name}. ${c.place.description}`,
       '',
-      `Write the culprit's confession in the first person, 60 to 80 words, spoken aloud.`,
-      `Start by saying their full name, "${c.culprit.name}". Say how and where, and why, from their motive.`,
-      'Dramatic but never gruesome.',
+      "The players' choices that shaped this case, by player:",
+      ...c.answers.map((a) => `${a.player}: ${a.question} -> ${a.answer}`),
+      '',
+      `Write the confession in the culprit's own voice, in the first person, 60 to 90 words, spoken aloud.`,
+      `Start by saying their full name, "${c.culprit.name}". Say how and where, and give the motive.`,
+      'Pay off at least one choice from each player, so both players hear their choices mattered.',
+      'End with a small twist. Dramatic but never gruesome.',
     ].join('\n'),
   }
 }
@@ -91,6 +98,8 @@ interface Row<T> {
 }
 
 interface RoundFields {
+  gameId?: string
+  revealedAnswers?: string
   caseTitle?: string
   victim?: string
   settingId?: string
@@ -142,6 +151,17 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
 
   if (!confession || confession === template) {
     const setting = SETTINGS.find((s) => s.id === round.settingId)
+    // Both players' choices (copied into the round at the reveal), credited by display name (R37).
+    const players = (await deps.records.query('players', { where: { gameId: round.gameId ?? '' }, limit: 10 })) as Row<{
+      userId: string
+      displayName?: string
+    }>[]
+    const nameOf = (userId: string) =>
+      players.find((p) => p.data.userId === userId)?.data.displayName?.trim() || 'A player'
+    const revealed = JSON.parse(round.revealedAnswers || '{}') as Record<string, { question: string; answer: string }[]>
+    const answers = Object.entries(revealed).flatMap(([userId, list]) =>
+      list.map((a) => ({ player: nameOf(userId), question: a.question, answer: a.answer })),
+    )
     const written = await askForJson<string>(
       integrationFromCron(deps.integrations),
       `confession for round ${job.roundId}`,
@@ -152,6 +172,7 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
         culprit,
         method,
         place,
+        answers,
       }),
       (value) => validateConfession(value, culprit.name),
       500,

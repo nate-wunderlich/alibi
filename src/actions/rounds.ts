@@ -26,6 +26,8 @@ import { loadRound, must, refuse, userInSeat, type Game } from './helpers'
 /** A question as stored for a player: the id is what submitAnswers checks. */
 export interface StoredQuestion {
   id: string
+  /** R37: the scene beat shown above the question. Rounds prepared before R37 have none. */
+  beat?: string
   text: string
   answers: string[]
 }
@@ -94,7 +96,12 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
 
   let n = 0
   for (const seat of SEATS) {
-    const questions: StoredQuestion[] = set[seat].map((q) => ({ id: `q${++n}`, text: q.text, answers: q.answers }))
+    const questions: StoredQuestion[] = set[seat].map((q) => ({
+      id: `q${++n}`,
+      beat: q.beat,
+      text: q.text,
+      answers: q.answers,
+    }))
     must(
       await tools.create('questions', {
         roundId,
@@ -118,6 +125,18 @@ export async function loadAnswers(tools: ActionTools, roundId: string, game: Gam
     byUser[id] = row ? (JSON.parse(String(row.data.answers)) as StoredAnswer[]) : []
   }
   return byUser
+}
+
+/** Each player's display name, for crediting their choices (R37); the seat if a name is missing. */
+export async function playerNames(tools: ActionTools, game: Game): Promise<Record<string, string>> {
+  const rows = must(await tools.query('players', { where: { gameId: game.id }, limit: 10 }), 'Loading the players')
+  const names: Record<string, string> = {}
+  for (const seat of SEATS) {
+    const id = userInSeat(game, seat)
+    const row = rows.records.find((r) => r.data.userId === id)
+    names[id] = String(row?.data.displayName ?? '').trim() || (seat === 'host' ? 'The host' : 'The guest')
+  }
+  return names
 }
 
 /** Ask the AI for the case; fall back to the preset case after one retry. */
@@ -162,7 +181,11 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
   must(await tools.update('rounds', roundId, { status: 'generating' }), 'Starting to write the case')
   try {
     const answers = await loadAnswers(tools, roundId, game)
-    const all = SEATS.flatMap((seat) => answers[userInSeat(game, seat)])
+    const names = await playerNames(tools, game)
+    const all = SEATS.flatMap((seat) => {
+      const id = userInSeat(game, seat)
+      return answers[id].map((a) => ({ player: names[id], question: a.question, answer: a.answer }))
+    })
     const theCase = await writeCase(tools, game, round.settingId, round.number, all)
     await layOutAndDeal(tools, game, roundId, round.number, theCase)
   } catch (e) {

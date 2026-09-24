@@ -7,14 +7,19 @@
  * fails twice. Pure code: no network, no database.
  */
 
+import { findGraphicTerm } from './caseGen'
 import { shuffle, type Player, type Rng } from './rules'
 
 export const QUESTION_COUNT = 4
 export const ANSWER_COUNT = 4
 export const QUESTION_MAX_LENGTH = 120
 export const ANSWER_MAX_LENGTH = 40
+/** R37: a scene beat is one or two sentences, at most this many words. */
+export const BEAT_MAX_WORDS = 30
 
 export interface Question {
+  /** R37: the moment that sets up the choice, shown above the question (second person, present tense). */
+  beat: string
   text: string
   answers: string[]
 }
@@ -32,11 +37,20 @@ function hasDuplicates(texts: string[]): boolean {
   return new Set(texts.map(normalize)).size !== texts.length
 }
 
-/** Check one question's shape, text, and answers. Returns a list of problems (empty if fine). */
+/** Check one question's shape, scene beat, text, and answers. Returns a list of problems (empty if fine). */
 function checkQuestion(item: unknown, n: number): string[] {
   if (typeof item !== 'object' || item === null) return [`Question ${n} is not an object.`]
-  const { text, answers } = item as { text?: unknown; answers?: unknown }
+  const { beat, text, answers } = item as { beat?: unknown; text?: unknown; answers?: unknown }
   const errors: string[] = []
+
+  if (typeof beat !== 'string' || beat.trim() === '') errors.push(`Question ${n} has no scene beat.`)
+  else {
+    if (beat.trim().split(/\s+/).length > BEAT_MAX_WORDS) {
+      errors.push(`Question ${n}'s scene beat is longer than ${BEAT_MAX_WORDS} words.`)
+    }
+    const term = findGraphicTerm(beat)
+    if (term) errors.push(`Question ${n}'s scene beat is too graphic ("${term}").`)
+  }
 
   if (typeof text !== 'string' || text.trim() === '') errors.push(`Question ${n} has no text.`)
   else if (text.trim().length > QUESTION_MAX_LENGTH) {
@@ -62,9 +76,10 @@ function checkQuestion(item: unknown, n: number): string[] {
 
 /**
  * Check a round's questions, typically straight from the AI's JSON.
- * Rules: exactly 4 questions, each with exactly 4 answers; no empty text;
- * questions up to 120 characters, answers up to 40; no repeated question,
- * and no repeated answer within a question.
+ * Rules: exactly 4 questions, each with a scene beat (up to 30 words, passing
+ * the tone guard) and exactly 4 answers; no empty text; questions up to 120
+ * characters, answers up to 40; no repeated question, and no repeated answer
+ * within a question.
  */
 export function validateQuestions(input: unknown): ValidationResult {
   if (!Array.isArray(input)) return { ok: false, errors: ['Expected a list of questions.'] }
@@ -91,24 +106,24 @@ export function splitForPlayers(questions: Question[]): QuestionSet {
  */
 const BANK_BY_ASPECT: Record<'who' | 'what' | 'where' | 'motive', Question[]> = {
   who: [
-    { text: 'Who was acting strangely before the crime?', answers: ['The newcomer', 'The oldest one here', 'The one in charge', 'The quiet helper'] },
-    { text: 'Who had a secret they were hiding?', answers: ['A trusted friend', 'A rival', 'A family member', 'A stranger'] },
-    { text: 'Who argued with the victim that day?', answers: ['Their partner', 'Their boss', 'An old friend', 'Nobody, oddly'] },
+    { beat: 'You scan the room one last time before it happened. One face will not meet your eyes.', text: 'Who was acting strangely before the crime?', answers: ['The newcomer', 'The oldest one here', 'The one in charge', 'The quiet helper'] },
+    { beat: 'A whisper stops the moment you walk in. Somebody here is guarding something.', text: 'Who had a secret they were hiding?', answers: ['A trusted friend', 'A rival', 'A family member', 'A stranger'] },
+    { beat: 'Raised voices echo down the hall that afternoon. You catch only the end of it.', text: 'Who argued with the victim that day?', answers: ['Their partner', 'Their boss', 'An old friend', 'Nobody, oddly'] },
   ],
   what: [
-    { text: 'What went wrong just before the crime?', answers: ['The lights went out', 'A loud crash', 'An alarm went off', 'Someone screamed'] },
-    { text: 'What strange clue was left behind?', answers: ['A torn note', 'A muddy footprint', 'A broken watch', 'A strange smell'] },
-    { text: 'What went missing the night before?', answers: ['A key', 'A map', 'A letter', 'A tool'] },
+    { beat: 'Everything is quiet. Then, all at once, it is not.', text: 'What went wrong just before the crime?', answers: ['The lights went out', 'A loud crash', 'An alarm went off', 'Someone screamed'] },
+    { beat: 'You kneel where it happened. Something small sits where it should not be.', text: 'What strange clue was left behind?', answers: ['A torn note', 'A muddy footprint', 'A broken watch', 'A strange smell'] },
+    { beat: 'The night before, you notice an empty spot on a shelf.', text: 'What went missing the night before?', answers: ['A key', 'A map', 'A letter', 'A tool'] },
   ],
   where: [
-    { text: 'Where was the victim last seen?', answers: ['Near the entrance', 'In a hidden corner', 'By the windows', 'Somewhere off-limits'] },
-    { text: 'Where did everyone gather that evening?', answers: ['The main hall', 'The kitchen', 'Outside', 'The quietest room'] },
-    { text: 'Where was a door found unlocked?', answers: ['The storeroom', 'The back exit', 'The office', 'The basement'] },
+    { beat: 'You retrace the victim\'s last steps. The trail goes cold in one place.', text: 'Where was the victim last seen?', answers: ['Near the entrance', 'In a hidden corner', 'By the windows', 'Somewhere off-limits'] },
+    { beat: 'As night falls, everyone drifts to the same place, as if pulled there.', text: 'Where did everyone gather that evening?', answers: ['The main hall', 'The kitchen', 'Outside', 'The quietest room'] },
+    { beat: 'You test every handle on your rounds. One turns when it should not.', text: 'Where was a door found unlocked?', answers: ['The storeroom', 'The back exit', 'The office', 'The basement'] },
   ],
   motive: [
-    { text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A broken promise'] },
-    { text: 'What mood hung over the place?', answers: ['Nervous', 'Festive', 'Gloomy', 'Suspicious'] },
-    { text: 'What did the victim know that others did not?', answers: ['Where the treasure is', 'Who lied', 'A way out', 'A dangerous plan'] },
+    { beat: 'Old tensions simmer all evening. You can feel them in every glance.', text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A broken promise'] },
+    { beat: 'You step inside and the air changes. Everyone feels it.', text: 'What mood hung over the place?', answers: ['Nervous', 'Festive', 'Gloomy', 'Suspicious'] },
+    { beat: 'The victim smiled like someone holding a winning card.', text: 'What did the victim know that others did not?', answers: ['Where the treasure is', 'Who lied', 'A way out', 'A dangerous plan'] },
   ],
 }
 

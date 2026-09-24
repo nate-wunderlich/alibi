@@ -13,7 +13,8 @@ import type { Setting } from './settings'
 
 export const CARD_NAME_MAX = 40
 export const CARD_DESCRIPTION_MAX = 140
-export const NARRATION_MAX = 600
+/** R37: room for a 70-90 word opening that credits both players by name. */
+export const NARRATION_MAX = 750
 export const TITLE_MAX = 80
 export const VICTIM_MAX = 120
 
@@ -67,8 +68,9 @@ export interface GeneratedCase {
   locations: GeneratedCard[]
 }
 
-/** One question a player answered, with the answer they tapped. */
+/** One question a player answered, with the answer they tapped and who they are (R37). */
 export interface AnsweredQuestion {
+  player: string
   question: string
   answer: string
 }
@@ -207,8 +209,9 @@ export function buildQuestionPrompt(setting: Setting): Prompt {
       '3. where: a place within this setting;',
       '4. mood or motive: what people want, fear, or feel.',
       'Each question has exactly 4 answers to tap. Keep it short: each question at most 15 words, each answer at most 4 words.',
+      'Before each question, write a scene beat: one or two cinematic sentences in the second person and present tense, at most 30 words, that put the player in the moment right before the choice (for example: "The storm hits. Someone pounds on the lighthouse door.").',
       'No question may repeat another, and no answer may repeat within a question.',
-      'Return: [{"text": "question", "answers": ["a", "b", "c", "d"]}, ...] with exactly 4 items.',
+      'Return: [{"beat": "scene", "text": "question", "answers": ["a", "b", "c", "d"]}, ...] with exactly 4 items.',
     ].join('\n'),
   }
 }
@@ -229,8 +232,8 @@ export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], e
     user: [
       describeSetting(setting),
       '',
-      "The players' answers (each one must visibly shape the case: a name, a card, the victim, or the opening):",
-      ...answers.map((a, i) => `${i + 1}. ${a.question} -> ${a.answer}`),
+      "The players' choices, by player (each one must visibly shape the case: a name, a card, the victim, or the opening):",
+      ...answers.map((a, i) => `${i + 1}. ${a.player}: ${a.question} -> ${a.answer}`),
       '',
       earlierTitles.length > 0
         ? `Earlier cases in this series (your title must not repeat or echo any of them): ${earlierTitles.join('; ')}`
@@ -239,7 +242,7 @@ export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], e
       'Write:',
       '- a title (at most 6 words). The title must not repeat the setting\'s name.',
       '- the victim (a name plus at most 8 words);',
-      '- an opening narration of 50 to 70 words, read aloud at the start;',
+      '- an opening narration of 70 to 90 words, read aloud at the start. It credits each player\'s choices by name (for example: "Because Nathan let the merchant captain in..."), names all 4 suspects, and ends on a hook question;',
       '- 4 suspects: every one belongs to this setting and gets a believable motive in their description, because any of them could turn out to be the culprit;',
       '- 4 weapons: each is a possible METHOD for the incident described above, and only one will turn out true, so all 4 must be plausible;',
       '- 4 locations: places within this setting where it could have happened.',

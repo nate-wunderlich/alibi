@@ -80,12 +80,12 @@ describe('validateCase', () => {
   })
 
   it(`rejects an opening narration over ${NARRATION_MAX} characters`, () => {
-    expect(NARRATION_MAX).toBe(600)
+    expect(NARRATION_MAX).toBe(750) // R37: ~90 words plus two player names
     const atLimit = validCase()
-    atLimit.openingNarration = 'N'.repeat(600)
+    atLimit.openingNarration = 'N'.repeat(750)
     expect(validateCase(atLimit).ok).toBe(true)
     const tooLong = validCase()
-    tooLong.openingNarration = 'N'.repeat(601)
+    tooLong.openingNarration = 'N'.repeat(751)
     expect(validateCase(tooLong).ok).toBe(false)
   })
 
@@ -204,14 +204,23 @@ describe('buildQuestionPrompt', () => {
     expect(text).toContain(setting.mood)
     expect(text).toMatch(/JSON/)
   })
+
+  it('asks for a scene beat per question: second person, present tense, at most 30 words (R37)', () => {
+    const text = Object.values(buildQuestionPrompt(setting)).join(' ')
+    expect(text).toMatch(/beat/i)
+    expect(text).toMatch(/second person/i)
+    expect(text).toMatch(/present tense/i)
+    expect(text).toMatch(/30 words/)
+    expect(text).toContain('"beat"')
+  })
 })
 
 describe('buildCasePrompt', () => {
   const answers = [
-    { question: 'What went wrong on the ship?', answer: 'The lights failed' },
-    { question: 'Who was acting strangely?', answer: 'The navigator' },
-    { question: 'Where was the victim last seen?', answer: 'The cargo bay' },
-    { question: 'What were they arguing about?', answer: 'Fuel rations' },
+    { player: 'Nathan', question: 'What went wrong on the ship?', answer: 'The lights failed' },
+    { player: 'Nathan', question: 'Who was acting strangely?', answer: 'The navigator' },
+    { player: 'Nate', question: 'Where was the victim last seen?', answer: 'The cargo bay' },
+    { player: 'Nate', question: 'What were they arguing about?', answer: 'Fuel rations' },
   ]
   const earlierTitles = ['The Silent Hatch', 'Orbit of Lies']
 
@@ -233,6 +242,21 @@ describe('buildCasePrompt', () => {
       'Keep it light, like a party mystery game: no graphic injuries or gore; methods can be sinister but never gruesome.',
     )
     expect(text).toContain("The title must not repeat the setting's name.")
+  })
+
+  it("pairs each answer with its player's name, and asks the opening to credit them (R37)", () => {
+    const text = Object.values(buildCasePrompt(setting, answers, [])).join(' ')
+    expect(text).toContain('Nathan: What went wrong on the ship? -> The lights failed')
+    expect(text).toContain('Nate: What were they arguing about? -> Fuel rations')
+    expect(text).toMatch(/credit/i)
+    expect(text).toMatch(/by name/i)
+  })
+
+  it('asks the opening to name all 4 suspects, run 70-90 words, and end on a question (R37)', () => {
+    const text = Object.values(buildCasePrompt(setting, answers, [])).join(' ')
+    expect(text).toMatch(/names? all 4 suspects/i)
+    expect(text).toMatch(/70 to 90 words/)
+    expect(text).toMatch(/end(s|ing)? (on|with) a (hook )?question/i)
   })
 
   it('states the rules the case must follow', () => {

@@ -32,6 +32,10 @@ describe('confessionPrompt', () => {
     culprit,
     method,
     place,
+    answers: [
+      { player: 'Nathan', question: 'Who knocked on the door?', answer: 'A merchant captain' },
+      { player: 'Nate', question: 'Where did the lamp oil go?', answer: 'The cellar' },
+    ],
   })
   const text = prompt.system + prompt.user
 
@@ -49,11 +53,20 @@ describe('confessionPrompt', () => {
     }
   })
 
-  it('asks for a family-friendly first-person confession of about 60-80 words, as JSON', () => {
+  it("asks for a family-friendly confession in the culprit's voice, 60 to 90 words, as JSON (R37)", () => {
     expect(text).toMatch(/first person/i)
-    expect(text).toMatch(/60.{1,4}80 words/)
+    expect(text).toMatch(/culprit's (own )?voice/i)
+    expect(text).toMatch(/60 to 90 words/)
     expect(text).toMatch(/family-friendly/i)
     expect(text).toMatch(/JSON/)
+  })
+
+  it("includes both players' names and answers, and asks for the motive, a payoff for each player, and a twist (R37)", () => {
+    expect(text).toContain('Nathan: Who knocked on the door? -> A merchant captain')
+    expect(text).toContain('Nate: Where did the lamp oil go? -> The cellar')
+    expect(text).toMatch(/motive/i)
+    expect(text).toMatch(/each player/i)
+    expect(text).toMatch(/twist/i)
   })
 })
 

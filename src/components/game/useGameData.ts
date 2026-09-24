@@ -58,6 +58,8 @@ export interface RoundData {
 /** A player's case question, as prepared by the server. */
 export interface StoredQuestion {
   id: string
+  /** R37: the scene beat shown above the question (absent on rounds prepared before R37). */
+  beat?: string
   text: string
   answers: string[]
 }

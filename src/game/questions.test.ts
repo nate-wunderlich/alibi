@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ANSWER_MAX_LENGTH,
+  BEAT_MAX_WORDS,
   FALLBACK_BANK,
   fallbackQuestions,
   QUESTION_MAX_LENGTH,
@@ -23,10 +24,10 @@ function seededRng(seed: number): () => number {
 /** Four valid questions, each with four answers. */
 function validSet(): Question[] {
   return [
-    { text: 'What went wrong just before the crime?', answers: ['A power cut', 'A loud crash', 'An alarm', 'A scream'] },
-    { text: 'Who was acting strangely?', answers: ['The captain', 'The cook', 'The guest', 'The doctor'] },
-    { text: 'Where was the last place anyone saw the victim?', answers: ['The deck', 'The galley', 'The cabin', 'The hold'] },
-    { text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A love letter'] },
+    { beat: 'The lights flicker. Somewhere below deck, glass breaks.', text: 'What went wrong just before the crime?', answers: ['A power cut', 'A loud crash', 'An alarm', 'A scream'] },
+    { beat: 'You watch the crew at dinner. One chair scrapes back too fast.', text: 'Who was acting strangely?', answers: ['The captain', 'The cook', 'The guest', 'The doctor'] },
+    { beat: 'The corridor is empty now. You try to picture the last footsteps.', text: 'Where was the last place anyone saw the victim?', answers: ['The deck', 'The galley', 'The cabin', 'The hold'] },
+    { beat: 'Raised voices carried through the walls all evening.', text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A love letter'] },
   ]
 }
 
@@ -108,12 +109,43 @@ describe('validateQuestions', () => {
   })
 })
 
+describe('scene beats (R37)', () => {
+  it(`caps a beat at ${BEAT_MAX_WORDS} words`, () => {
+    expect(BEAT_MAX_WORDS).toBe(30)
+    const atLimit = validSet()
+    atLimit[0] = { ...atLimit[0], beat: Array.from({ length: 30 }, () => 'word').join(' ') }
+    expect(validateQuestions(atLimit).ok).toBe(true)
+    const tooLong = validSet()
+    tooLong[0] = { ...tooLong[0], beat: Array.from({ length: 31 }, () => 'word').join(' ') }
+    expect(validateQuestions(tooLong).ok).toBe(false)
+  })
+
+  it('requires a non-empty beat on every question', () => {
+    const missing = validSet() as Partial<Question>[]
+    delete missing[2].beat
+    expect(validateQuestions(missing).ok).toBe(false)
+    const blank = validSet()
+    blank[1] = { ...blank[1], beat: '   ' }
+    expect(validateQuestions(blank).ok).toBe(false)
+  })
+
+  it('applies the tone guard to beats', () => {
+    const graphic = validSet()
+    graphic[0] = { ...graphic[0], beat: 'You find blood on the stairs.' }
+    const result = validateQuestions(graphic)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/graphic/i)
+  })
+})
+
 describe('fallback bank', () => {
   it('has at least 8 questions, each valid on its own terms', () => {
     expect(FALLBACK_BANK.length).toBeGreaterThanOrEqual(8)
     for (const q of FALLBACK_BANK) {
       expect(q.answers).toHaveLength(4)
       expect(q.text.length).toBeLessThanOrEqual(120)
+      expect(q.beat.trim().length, `"${q.text}" has a beat`).toBeGreaterThan(0)
+      expect(q.beat.trim().split(/\s+/).length, `"${q.text}" beat is at most 30 words`).toBeLessThanOrEqual(30)
       for (const a of q.answers) expect(a.length).toBeLessThanOrEqual(40)
     }
   })
