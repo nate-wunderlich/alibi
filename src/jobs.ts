@@ -42,26 +42,33 @@
 import { buildCronContext, type Job, type JobContext } from 'deepspace/worker'
 import type { Env } from '../worker'
 import { uploadMedia } from './server/media'
-import { runPortraits } from './server/portraits'
+import { runConfession, runOpening } from './server/narration'
+import { runPortraits, type PortraitDeps } from './server/portraits'
+
+/**
+ * A media job's tools: records and integrations through the cron context
+ * bound to the app's own record room (its default room, 'default', is one the
+ * app never reads; FRICTION 8), acting as the host, plus file storage (R34).
+ */
+function mediaDeps(env: Env, hostId: string): PortraitDeps {
+  const ctx = buildCronContext(env, hostId, `app:${env.DEEPSPACE_APP_ID}`)
+  return {
+    records: ctx.records,
+    integrations: ctx.integrations,
+    upload: (userId, file) => uploadMedia(env, userId, file),
+  }
+}
 
 export async function runJob(job: Job, _ctx: JobContext, env: Env): Promise<unknown> {
+  const hostId = String(job.enqueuedBy ?? '')
+  const { roundId } = (job.payload ?? {}) as { roundId: string }
   switch (job.type) {
-    // R35: paint the round's suspect portraits. Records are read and written
-    // through the cron context bound to the app's own record room (its default
-    // room, 'default', is one the app never reads; FRICTION 8), acting as the host.
-    case 'portraits': {
-      const hostId = String(job.enqueuedBy ?? '')
-      const ctx = buildCronContext(env, hostId, `app:${env.DEEPSPACE_APP_ID}`)
-      const { roundId } = job.payload as { roundId: string }
-      return runPortraits(
-        {
-          records: ctx.records,
-          integrations: ctx.integrations,
-          upload: (userId, file) => uploadMedia(env, userId, file),
-        },
-        { roundId, hostId },
-      )
-    }
+    case 'portraits': // R35
+      return runPortraits(mediaDeps(env, hostId), { roundId, hostId })
+    case 'opening': // R36 (1)
+      return runOpening(mediaDeps(env, hostId), { roundId, hostId })
+    case 'confession': // R36 (2)
+      return runConfession(mediaDeps(env, hostId), { roundId, hostId })
     default:
       throw new Error(`Unknown job type: ${job.type}`)
   }

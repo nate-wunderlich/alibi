@@ -11,7 +11,7 @@
  * src/game/caseGen.ts, which only knows the setting and the answers (R4).
  */
 
-import type { ActionTools } from 'deepspace/worker'
+import type { ActionResult, ActionTools, CronContext } from 'deepspace/worker'
 import type { Prompt } from '../game/caseGen'
 
 export const AI_MODEL = 'claude-haiku-4-5'
@@ -30,8 +30,29 @@ function parseJson(text: string): unknown {
   return JSON.parse(unfenced)
 }
 
+/** All askForJson needs: a way to call an integration, as actions have it. */
+export type IntegrationCaller = Pick<ActionTools, 'integration'>
+
+/**
+ * Let a background job use askForJson (R36). The cron context's
+ * integrations.call returns the data or throws; this wraps it into the
+ * { success, data, error } shape actions get from tools.integration.
+ */
+export function integrationFromCron(integrations: CronContext['integrations']): IntegrationCaller {
+  return {
+    integration: async <T = unknown>(endpoint: string, data?: unknown): Promise<ActionResult<T>> => {
+      try {
+        const value = await integrations.call(endpoint, (data ?? {}) as Record<string, unknown>)
+        return { success: true, data: value as T }
+      } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    },
+  }
+}
+
 export async function askForJson<T>(
-  tools: ActionTools,
+  tools: IntegrationCaller,
   label: string,
   prompt: Prompt,
   check: Check<T>,

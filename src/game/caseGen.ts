@@ -41,8 +41,8 @@ export const GRAPHIC_TERMS = [
   'corpse',
 ]
 
-/** The first graphic term in a text, or null. */
-function graphicTermIn(text: string): string | null {
+/** The first graphic term in a text, or null. Shared with the confession check (R36). */
+export function findGraphicTerm(text: string): string | null {
   const lower = text.toLowerCase()
   return GRAPHIC_TERMS.find((term) => lower.includes(term)) ?? null
 }
@@ -138,7 +138,7 @@ export function validateCase(input: unknown, options: { settingName?: string } =
     ]),
   ]
   for (const [label, text] of texts) {
-    const term = typeof text === 'string' ? graphicTermIn(text) : null
+    const term = typeof text === 'string' ? findGraphicTerm(text) : null
     if (term) errors.push(`${label} is too graphic ("${term}").`)
   }
 

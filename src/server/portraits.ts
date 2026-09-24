@@ -69,6 +69,7 @@ export async function runPortraits(deps: PortraitDeps, job: { roundId: string; h
 
   const results = await Promise.allSettled(
     missing.map(async (card) => {
+      console.info(`[portraits] round ${job.roundId} card ${card.recordId}: image call`)
       const generated = (await deps.integrations.call('openai/generate-image', {
         prompt: portraitPrompt(setting, card.data),
         model: 'gpt-image-1-mini',

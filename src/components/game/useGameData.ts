@@ -49,6 +49,10 @@ export interface RoundData {
   hostAnswered: number
   guestAnswered: number
   revealedAnswers: string
+  /** R36: filled by background jobs in production; empty until then. */
+  openingAudioUrl: string
+  confession: string
+  confessionAudioUrl: string
 }
 
 /** A player's case question, as prepared by the server. */

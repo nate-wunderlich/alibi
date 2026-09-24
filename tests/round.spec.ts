@@ -68,6 +68,10 @@ function deriveEnvelope(alice: RoundView, bob: RoundView): Triple {
 /** Cards of one kind from a hand. */
 const ofKind = (view: RoundView, hand: string[], kind: Kind) => hand.filter((id) => view.kindOf.get(id) === kind)
 
+/** A card's name as a player sees it (cards are public). */
+const cardName = (view: RoundView, cardId: string) =>
+  String(view.visible.cards.rows.find((c) => c.recordId === cardId)?.data.name ?? '')
+
 /** Find this run's guess row by id. */
 const guessRow = (v: Visible, guessId: string) => v.guesses.rows.find((g) => g.recordId === guessId)
 
@@ -217,6 +221,10 @@ test('a best-of-3 series: show, choose, no match, wrong and right accusations, r
       const answers = parseJson<Record<string, unknown[]>>(view.round.data.revealedAnswers)
       expect(answers[aliceId], "Alice's answers are revealed").toHaveLength(2)
       expect(answers[bobId], "Bob's answers are revealed").toHaveLength(2)
+      // R36: a confession is written at once, and it names the culprit.
+      const culprit = cardName(view, envelope.suspect)
+      expect(culprit, 'the culprit card has a name').not.toBe('')
+      expect(String(view.round.data.confession ?? ''), 'both players see a confession naming the culprit').toContain(culprit)
     }
   })
 
@@ -254,6 +262,11 @@ test('a best-of-3 series: show, choose, no match, wrong and right accusations, r
     const after = await viewRound(alice.page, round2Id, gameId)
     expect(after.round.data.status).toBe('revealed')
     expect(parseJson(after.round.data.revealedSolution)).toEqual(envelope2)
+    for (const view of [after, await viewRound(bob.page, round2Id, gameId)]) {
+      expect(String(view.round.data.confession ?? ''), 'the confession names the culprit').toContain(
+        cardName(view, envelope2.suspect),
+      )
+    }
     expect(after.game.data.scoreGuest, 'Bob has 2').toBe(2)
     expect(after.game.data.scoreHost, 'Alice has 0').toBe(0)
     expect(after.game.data.status, 'best of 3 is decided at 2').toBe('finished')

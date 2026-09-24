@@ -11,6 +11,7 @@ import { useAction } from '@/lib/actions'
 import type { Triple } from '../../game/rules'
 import { SETTINGS } from '../../game/settings'
 import { CardView, FileLabel, InlineError } from './CardView'
+import { NarrationAudio } from './NarrationAudio'
 import { answeredFlags, QuestionsPanel, WritingCase } from './QuestionsPanel'
 import { Scoreboard } from './Scoreboard'
 import type { GameView, Round, StoredAnswer } from './useGameData'
@@ -48,6 +49,16 @@ export function RevealDetails({ view, round }: { view: GameView; round: Round })
             ))}
         </div>
       </div>
+
+      {round.confession && (
+        <div data-testid="reveal-confession">
+          <FileLabel>The confession</FileLabel>
+          <blockquote className="border-l-2 border-primary pl-3 text-sm italic leading-relaxed">{round.confession}</blockquote>
+          {round.confessionAudioUrl && (
+            <NarrationAudio src={round.confessionAudioUrl} label="Play the confession" autoplay testId="play-confession" />
+          )}
+        </div>
+      )}
 
       {accusation && (
         <div data-testid="reveal-accusation" className="rounded-sm border border-border bg-card p-3 text-sm">

@@ -15,6 +15,7 @@ import type { CardKind } from '../../game/rules'
 import { SETTINGS } from '../../game/settings'
 import { CardView, FileLabel, InlineError, KIND_LABEL, KINDS } from './CardView'
 import { DetectiveGrid } from './DetectiveGrid'
+import { NarrationAudio } from './NarrationAudio'
 import { Scoreboard } from './Scoreboard'
 import type { Card, GameView, Guess, Round } from './useGameData'
 
@@ -37,9 +38,14 @@ export function Table({ view, round }: { view: GameView; round: Round }) {
           {round.caseTitle}
         </h1>
         <p className="mt-1 text-muted-foreground">Victim: {round.victim}</p>
-        <Button variant="link" className="h-auto px-0" onClick={() => setNarrationOpen((o) => !o)}>
-          {narrationOpen ? 'Hide the opening' : 'Read the opening'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-x-4">
+          <Button variant="link" className="h-auto px-0" onClick={() => setNarrationOpen((o) => !o)}>
+            {narrationOpen ? 'Hide the opening' : 'Read the opening'}
+          </Button>
+          {round.openingAudioUrl && (
+            <NarrationAudio src={round.openingAudioUrl} label="Play the opening" testId="play-opening" />
+          )}
+        </div>
         {narrationOpen && (
           <p data-testid="opening-narration" className="mt-1 border-l-2 border-primary pl-3 text-sm leading-relaxed">
             {round.openingNarration}

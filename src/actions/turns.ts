@@ -11,6 +11,8 @@
 
 import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
+import { portraitsEnabled } from '../server/portraits'
+import { templateConfession } from '../server/narration'
 import { checkAccusation, nextTurn, resolveGuess, seriesWinner, type Card, type Player, type Triple } from '../game/rules'
 import {
   action,
@@ -27,7 +29,7 @@ import {
   type Game,
   type Round,
 } from './helpers'
-import { loadAnswers, prepareRound } from './rounds'
+import { loadAnswers, prepareRound, queueMediaJob } from './rounds'
 
 /** Load a round that is being played, its game, and the caller's seat; refuse otherwise. */
 async function loadPlayingRound(tools: ActionTools, roundId: string, userId: string) {
@@ -138,10 +140,13 @@ const endTurn = action(async ({ userId, params, tools }) => {
  * players' questions and answers into the round, mark it revealed, score it,
  * and finish the series if it is decided. Otherwise prepare the next case
  * (setting and questions), so both players can answer on the reveal screen.
+ * R36: a template confession is written at once, and the confession job is
+ * queued (production only) to replace it with the AI's version and voice it.
  * Returns the winner and the next round's id ('' when the series is over).
  */
 async function reveal(
   tools: ActionTools,
+  env: Env,
   game: Game,
   round: Round,
   solution: Triple,
@@ -155,6 +160,13 @@ async function reveal(
   }
   const winnerUserId = userInSeat(game, winner)
   const answers = await loadAnswers(tools, round.id, game)
+  const cards = must(await tools.query('cards', { where: { roundId: round.id }, limit: 20 }), 'Loading the cards')
+  const nameOf = (id: string) => String(cards.records.find((c) => c.recordId === id)?.data.name ?? '')
+  const confession = templateConfession({
+    culprit: nameOf(solution.suspect),
+    method: nameOf(solution.weapon),
+    place: nameOf(solution.location),
+  })
   must(
     await tools.update('rounds', round.id, {
       status: 'revealed',
@@ -164,9 +176,11 @@ async function reveal(
       revealedHands: JSON.stringify(hands),
       revealedAccusation: JSON.stringify(accusation),
       revealedAnswers: JSON.stringify(answers),
+      confession,
     }),
     'Revealing the round',
   )
+  if (portraitsEnabled()) await queueMediaJob(env, 'confession', game, round.id)
 
   const score = {
     host: game.scoreHost + (winner === 'host' ? 1 : 0),
@@ -190,7 +204,7 @@ async function reveal(
  * the envelope. Right wins the round; wrong gives it to the opponent
  * (rules.checkAccusation). Either way the round is revealed.
  */
-const accuse = action(async ({ userId, params, tools }) => {
+const accuse = action(async ({ userId, params, tools, env }) => {
   const roundId = textParam(params, 'roundId')
   const { round, game, seat } = await loadPlayingRound(tools, roundId, userId)
   requireTurn(round, userId)
@@ -206,6 +220,7 @@ const accuse = action(async ({ userId, params, tools }) => {
   const winner = correct ? seat : nextTurn(seat)
   const { winnerUserId, nextRoundId } = await reveal(
     tools,
+    env,
     game,
     round,
     solution,

@@ -73,6 +73,9 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
       hostAnswered: 0,
       guestAnswered: 0,
       revealedAnswers: '',
+      openingAudioUrl: '',
+      confession: '',
+      confessionAudioUrl: '',
     }),
     `Preparing round ${number}`,
   )
@@ -147,7 +150,8 @@ async function writeCase(tools: ActionTools, game: Game, settingId: string, numb
  * lay out the cards, deal, and start play. While the AI writes, the round is
  * 'generating' so both screens can say so; if anything fails, it goes back
  * to 'answering' so the host can try again. Once the round is playing, the
- * portraits job is queued (production builds only; R35).
+ * portraits and opening-narration jobs are queued (production builds only;
+ * R35, R36).
  */
 export async function openRound(tools: ActionTools, env: Env, game: Game, roundId: string): Promise<void> {
   const round = await loadRound(tools, roundId)
@@ -165,21 +169,30 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
     await tools.update('rounds', roundId, { status: 'answering' })
     throw e
   }
-  if (portraitsEnabled()) await queuePortraits(env, game, roundId)
+  if (portraitsEnabled()) {
+    await queueMediaJob(env, 'portraits', game, roundId)
+    await queueMediaJob(env, 'opening', game, roundId)
+  }
 }
 
 /**
- * Queue the round's portraits job (R35), acting as the host. Play never
- * waits for portraits, so a failure here is logged and otherwise ignored.
+ * Queue a media job for a round (R35 portraits, R36 opening and confession),
+ * acting as the host. Play never waits for media, so a failure here is logged
+ * and otherwise ignored. Callers check portraitsEnabled() (production only).
  */
-async function queuePortraits(env: Env, game: Game, roundId: string): Promise<void> {
+export async function queueMediaJob(
+  env: Env,
+  type: 'portraits' | 'opening' | 'confession',
+  game: Game,
+  roundId: string,
+): Promise<void> {
   try {
-    await enqueueJob(env.JOB_ROOMS, `app:${env.DEEPSPACE_APP_ID}`, 'portraits', { roundId }, {
+    await enqueueJob(env.JOB_ROOMS, `app:${env.DEEPSPACE_APP_ID}`, type, { roundId }, {
       enqueuedBy: game.host,
       maxAttempts: 2,
     })
   } catch (e) {
-    console.warn(`[portraits] could not queue round ${roundId}: ${e instanceof Error ? e.message : String(e)}`)
+    console.warn(`[${type}] could not queue round ${roundId}: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 

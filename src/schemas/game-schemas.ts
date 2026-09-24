@@ -98,6 +98,11 @@ export const roundsSchema: CollectionSchema = {
     number('guestAnswered'),
     /** At the reveal (R30): both players' questions and answers, as JSON. */
     text('revealedAnswers'),
+    /** R36: the voiced opening, filled by the 'opening' job (production only). */
+    text('openingAudioUrl'),
+    /** R36: written at the reveal (a template at once, the AI's version when ready). */
+    text('confession'),
+    text('confessionAudioUrl'),
   ],
   permissions: signedInReadOnly,
 }
