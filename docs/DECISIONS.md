@@ -213,6 +213,14 @@ R41. Alibis (Nate: the story must tie into the cards; measured D45-D47).
     R35/R36; name guard, tone guard); a code template is used if the AI
     fails or under test. Alibi texts are server-only until drawn.
 
+R42. An alibi may name only its own card (refines R41). Each alibi is
+    written without knowing the envelope, so a mention of another card
+    reads as evidence but is invented, and could mislead a deduction.
+    validateAlibis rejects an alibi containing any other card's full
+    name (case-insensitive; a leading "The" optional) or any capitalized
+    token of 3+ letters from another suspect's name. The prompt says so
+    plainly. The name and tone guards still apply.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
