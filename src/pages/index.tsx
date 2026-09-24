@@ -56,10 +56,15 @@ export default function Landing() {
 function SealedEnvelope() {
   return (
     <div aria-hidden className="relative mt-12 h-40 w-64 rounded-sm border border-border bg-card shadow-xl">
-      {/* Flap: two borders meeting in a point. */}
-      <div className="absolute inset-x-0 top-0 h-20 overflow-hidden">
-        <div className="mx-auto h-28 w-44 -translate-y-16 rotate-45 border border-border bg-muted" />
-      </div>
+      {/* Flap: a triangle from both top corners to a point at the center (POLISH: it was a rotated box, off-center and clipped). */}
+      <svg className="absolute inset-x-0 top-0 h-20 w-full" viewBox="0 0 256 80" preserveAspectRatio="none">
+        <polygon
+          points="0,0 256,0 128,80"
+          className="fill-muted stroke-border"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
       <div className="absolute bottom-4 left-4 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
         Case file · envelope
       </div>

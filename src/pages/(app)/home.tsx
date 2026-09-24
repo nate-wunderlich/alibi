@@ -119,7 +119,7 @@ function JoinByCode() {
           data-testid="join-code-input"
           value={code}
           onChange={(e) => setCode(e.target.value.toUpperCase())}
-          placeholder="6-letter code"
+          placeholder="6-character code"
           maxLength={6}
           autoComplete="off"
           className="font-mono tracking-[0.2em]"

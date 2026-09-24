@@ -32,6 +32,22 @@ export default defineConfig({
       },
     }),
   ],
+  // POLISH: keep every client chunk under Vite's 500 kB warning line. React and the router
+  // go in their own vendor chunk (it changes least, so browsers keep it cached across deploys).
+  // Client only: the Cloudflare worker stays one bundle.
+  environments: {
+    client: {
+      build: {
+        rolldownOptions: {
+          output: {
+            codeSplitting: {
+              groups: [{ name: 'react-vendor', test: /node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/ }],
+            },
+          },
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
