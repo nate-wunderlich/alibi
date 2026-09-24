@@ -4,6 +4,7 @@ import {
   buildQuestionPrompt,
   CARD_DESCRIPTION_MAX,
   CARD_NAME_MAX,
+  findGraphicTerm,
   GRAPHIC_TERMS,
   NARRATION_MAX,
   validateCase,
@@ -177,6 +178,20 @@ describe('validateCase tone guard', () => {
 
     const different = validCase()
     expect(validateCase(different, { settingName: setting.name }).ok).toBe(true)
+  })
+})
+
+describe('findGraphicTerm (D35: the "Father Gregory" false positive)', () => {
+  it('does not flag a harmless name that merely contains a term ("Gre-gory")', () => {
+    expect(findGraphicTerm('Father Gregory')).toBeNull()
+  })
+
+  it('still flags the term as a word', () => {
+    expect(findGraphicTerm('a gory scene')).toBe('gory')
+  })
+
+  it('still flags a term at the start of a longer word', () => {
+    expect(findGraphicTerm('bloodstained')).toBe('blood')
   })
 })
 

@@ -20,9 +20,9 @@ export const VICTIM_MAX = 120
 /**
  * The tone guard: text a party mystery should not contain. A case with any
  * of these, anywhere in its text, fails validation (then the AI retries once,
- * then the preset case is used). Matched case-insensitively and inside longer
- * words ("decapitat" also catches "decapitated"), so the list may also catch
- * the odd harmless word; a retry is cheap.
+ * then the preset case is used). Matched case-insensitively at the start of
+ * a word (see findGraphicTerm), so a stem like "decapitat" also catches
+ * "decapitated" but a name like "Gregory" is not "gory".
  */
 export const GRAPHIC_TERMS = [
   'blood',
@@ -41,10 +41,15 @@ export const GRAPHIC_TERMS = [
   'corpse',
 ]
 
-/** The first graphic term in a text, or null. Shared with the confession check (R36). */
+/**
+ * The first graphic term in a text, or null. Terms match case-insensitively
+ * at the start of a word, so "Gregory" is not "gory", while stems still
+ * match ("decapitat" catches "decapitated", "blood" catches "bloodstained").
+ * Shared with the confession check (R36).
+ */
 export function findGraphicTerm(text: string): string | null {
   const lower = text.toLowerCase()
-  return GRAPHIC_TERMS.find((term) => lower.includes(term)) ?? null
+  return GRAPHIC_TERMS.find((term) => new RegExp('\\b' + term).test(lower)) ?? null
 }
 
 export interface GeneratedCard {
