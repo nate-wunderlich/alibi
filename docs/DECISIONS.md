@@ -253,6 +253,17 @@ R44. Variety across games (Nate: nothing should feel repetitive; the
     when it is picked); rounds 2+ use both players'. Only rounds that
     started (playing or revealed) count as played.
 
+R45. Word caps are soft on the final case attempt (refines R38, R40,
+    R44; D55: every case fallback came from the scene or credit word
+    caps, and the fallback preset is far worse than a few extra words).
+    On calls 1-2 the opening-part word caps apply; on the final call
+    they are waived, but the assembled opening must still fit
+    NARRATION_MAX (750 characters), and the tone guard, player-name
+    guard, structure (all parts present, hook ends with "?", each credit
+    names its seat), and card counts still apply. The twist stays out of
+    the UI: it shows in the story itself. The secrecy spec's time budget
+    is raised for the test accounts' long play history.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
