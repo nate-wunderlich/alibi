@@ -51,39 +51,60 @@ export function integrationFromCron(integrations: CronContext['integrations']): 
   }
 }
 
+type Message = { role: 'user' | 'assistant'; content: string }
+
+/**
+ * `report`, if given, is told how many calls were made and whether one passed
+ * (the sample command uses it to measure first-try pass rates; R38).
+ */
 export async function askForJson<T>(
   tools: IntegrationCaller,
   label: string,
   prompt: Prompt,
   check: Check<T>,
   maxTokens: number,
+  report?: (r: { attempts: number; ok: boolean }) => void,
 ): Promise<T | null> {
+  // R38: a retry shows the AI its previous reply and exactly what was wrong with it.
+  let messages: Message[] = [{ role: 'user', content: prompt.user }]
   for (let attempt = 1; attempt <= 2; attempt++) {
     console.info(`[ai] ${label}: call ${attempt}`)
     const result = await tools.integration('anthropic/chat-completion', {
       model: AI_MODEL,
       max_tokens: maxTokens,
       system: prompt.system,
-      messages: [{ role: 'user', content: prompt.user }],
+      messages,
     })
     if (!result.success) {
       console.warn(`[ai] ${label}: call ${attempt} failed: ${result.error}`)
       continue
     }
+    const reply = replyText(result.data)
+    const retryWith = (feedback: string): Message[] => [
+      { role: 'user', content: prompt.user },
+      { role: 'assistant', content: reply },
+      { role: 'user', content: feedback },
+    ]
     let parsed: unknown
     try {
-      parsed = parseJson(replyText(result.data))
+      parsed = parseJson(reply)
     } catch {
       console.warn(`[ai] ${label}: call ${attempt} was not valid JSON`)
+      messages = retryWith('Your reply was not valid JSON. Reply again with the JSON only: no code fences, no other text.')
       continue
     }
     const checked = check(parsed)
     if (checked.ok) {
       console.info(`[ai] ${label}: ok on call ${attempt}`)
+      report?.({ attempts: attempt, ok: true })
       return checked.value
     }
     console.warn(`[ai] ${label}: call ${attempt} failed validation: ${checked.errors.slice(0, 3).join(' ')}`)
+    messages = retryWith(
+      ['Your reply did not pass these checks:', ...checked.errors.map((e) => `- ${e}`), 'Reply again with the corrected JSON only.'].join('\n'),
+    )
   }
   console.warn(`[ai] ${label}: using the fallback`)
+  report?.({ attempts: 2, ok: false })
   return null
 }

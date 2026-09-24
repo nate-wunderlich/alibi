@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assembleOpening,
   buildCasePrompt,
   buildQuestionPrompt,
   CARD_DESCRIPTION_MAX,
@@ -8,7 +9,9 @@ import {
   GRAPHIC_TERMS,
   NARRATION_MAX,
   validateCase,
+  validateOpeningParts,
   type GeneratedCase,
+  type OpeningParts,
 } from './caseGen'
 import { SETTINGS } from './settings'
 
@@ -21,7 +24,12 @@ function validCase(): GeneratedCase {
   return {
     title: 'The Airlock Affair',
     victim: 'Chief Engineer Vale',
-    openingNarration: 'The alarm stopped. Nobody on the ship could say who opened the airlock.',
+    openingParts: {
+      scene: 'The alarm stopped. Nobody on the ship could say who opened the airlock.',
+      creditHost: 'Nathan heard the hull groan just before the lights went out.',
+      creditGuest: 'Nate found the cargo bay door sealed from the inside.',
+      hook: 'So who wanted the engineer silenced?',
+    },
     suspects: cards('Suspect'),
     weapons: cards('Method'),
     locations: cards('Place'),
@@ -79,22 +87,40 @@ describe('validateCase', () => {
     expect(validateCase(longDescription).ok).toBe(false)
   })
 
-  it(`rejects an opening narration over ${NARRATION_MAX} characters`, () => {
+  it(`rejects an assembled opening over ${NARRATION_MAX} characters`, () => {
     expect(NARRATION_MAX).toBe(750) // R37: ~90 words plus two player names
-    const atLimit = validCase()
-    atLimit.openingNarration = 'N'.repeat(750)
-    expect(validateCase(atLimit).ok).toBe(true)
     const tooLong = validCase()
-    tooLong.openingNarration = 'N'.repeat(751)
+    // Within the scene's word cap, but very long words.
+    tooLong.openingParts.scene = Array.from({ length: 30 }, () => 'W'.repeat(24)).join(' ') + '.'
     expect(validateCase(tooLong).ok).toBe(false)
   })
 
+  it('assembles the stored openingNarration from the parts and the exact suspect names (R38)', () => {
+    const result = validateCase(validCase())
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.case.openingNarration).toBe(
+        'The alarm stopped. Nobody on the ship could say who opened the airlock. ' +
+          'Nathan heard the hull groan just before the lights went out. ' +
+          'Nate found the cargo bay door sealed from the inside. ' +
+          'Four suspects remain: Suspect 1, Suspect 2, Suspect 3, and Suspect 4. ' +
+          'So who wanted the engineer silenced?',
+      )
+    }
+  })
+
   it('rejects a missing title, victim, or opening, and input that is not a case', () => {
-    for (const field of ['title', 'victim', 'openingNarration'] as const) {
+    for (const field of ['title', 'victim'] as const) {
       const blank = validCase()
       blank[field] = '  '
       expect(validateCase(blank).ok, `blank ${field}`).toBe(false)
     }
+    const noParts = validCase() as Partial<GeneratedCase>
+    delete noParts.openingParts
+    expect(validateCase(noParts).ok, 'no openingParts').toBe(false)
+    const blankScene = validCase()
+    blankScene.openingParts.scene = '  '
+    expect(validateCase(blankScene).ok, 'blank scene').toBe(false)
     expect(validateCase(null).ok).toBe(false)
     expect(validateCase('a case').ok).toBe(false)
     expect(validateCase({ ...validCase(), suspects: 'four' }).ok).toBe(false)
@@ -137,7 +163,8 @@ describe('validateCase tone guard', () => {
       (c, t) => (c.locations[3].name = t),
       (c, t) => (c.title = t),
       (c, t) => (c.victim = t),
-      (c, t) => (c.openingNarration = t),
+      (c, t) => (c.openingParts.scene = t),
+      (c, t) => (c.openingParts.hook = `${t}?`),
     ]
     for (const term of GRAPHIC_TERMS) {
       for (const place of places) {
@@ -178,6 +205,71 @@ describe('validateCase tone guard', () => {
 
     const different = validCase()
     expect(validateCase(different, { settingName: setting.name }).ok).toBe(true)
+  })
+})
+
+describe('assembleOpening (R38)', () => {
+  const parts: OpeningParts = {
+    scene: 'Fog rolls in off the water.',
+    creditHost: 'Nathan let the captain in.',
+    creditGuest: 'Nate heard the lamp go dark.',
+    hook: 'Who wanted the keeper gone?',
+  }
+
+  it('puts the 4 exact suspect names in the fixed sentence and ends with the hook', () => {
+    const text = assembleOpening(parts, ['Captain Roswell', 'Eliza Crow', 'Thomas Wrenn', 'Dr. Iris Strand'])
+    expect(text).toContain('Four suspects remain: Captain Roswell, Eliza Crow, Thomas Wrenn, and Dr. Iris Strand.')
+    expect(text.startsWith('Fog rolls in off the water. Nathan let the captain in. Nate heard the lamp go dark.')).toBe(true)
+    expect(text.endsWith('Who wanted the keeper gone?')).toBe(true)
+  })
+})
+
+describe('validateOpeningParts (R38)', () => {
+  const players = { host: 'Nathan', guest: 'Nate' }
+  const good = (): OpeningParts => ({
+    scene: 'Fog rolls in off the water and the lamp gutters.',
+    creditHost: 'Because Nathan let the captain in, the door stood open all night.',
+    creditGuest: 'Because Nate followed the footprints, the cellar is no longer a secret.',
+    hook: 'Who wanted the keeper gone?',
+  })
+
+  it('accepts well-formed parts', () => {
+    expect(validateOpeningParts(good(), players)).toEqual([])
+  })
+
+  it("rejects a credit missing its player's name, or naming them twice", () => {
+    const missing = good()
+    missing.creditHost = 'The captain came in from the storm.'
+    expect(validateOpeningParts(missing, players).join(' ')).toMatch(/Nathan/)
+    const twice = good()
+    twice.creditGuest = 'Nate knew it; Nate always knows.'
+    expect(validateOpeningParts(twice, players).length).toBeGreaterThan(0)
+  })
+
+  it("rejects a credit that names the other player", () => {
+    const crossed = good()
+    crossed.creditHost = 'Because Nathan and Nate argued, the door stood open.'
+    expect(validateOpeningParts(crossed, players).join(' ')).toMatch(/Nate/)
+  })
+
+  it('does not confuse names that share letters (Nate inside Nathan)', () => {
+    // "Nathan" contains "Nat", not the word "Nate": the host credit is still fine.
+    expect(validateOpeningParts(good(), players)).toEqual([])
+  })
+
+  it('rejects a hook that does not end with "?"', () => {
+    const flat = good()
+    flat.hook = 'Someone here is lying.'
+    expect(validateOpeningParts(flat, players).join(' ')).toMatch(/\?/)
+  })
+
+  it('rejects parts over their word caps, and graphic terms', () => {
+    const long = good()
+    long.scene = Array.from({ length: 60 }, () => 'fog').join(' ')
+    expect(validateOpeningParts(long, players).join(' ')).toMatch(/scene/i)
+    const graphic = good()
+    graphic.creditGuest = 'Because Nate found blood on the stairs, the cellar matters.'
+    expect(validateOpeningParts(graphic, players).join(' ')).toMatch(/graphic/i)
   })
 })
 
@@ -252,11 +344,14 @@ describe('buildCasePrompt', () => {
     expect(text).toMatch(/by name/i)
   })
 
-  it('asks the opening to name all 4 suspects, run 70-90 words, and end on a question (R37)', () => {
+  it('asks for openingParts (scene, creditHost, creditGuest, hook) and names who each credit belongs to (R38)', () => {
     const text = Object.values(buildCasePrompt(setting, answers, [])).join(' ')
-    expect(text).toMatch(/names? all 4 suspects/i)
-    expect(text).toMatch(/70 to 90 words/)
-    expect(text).toMatch(/end(s|ing)? (on|with) a (hook )?question/i)
+    expect(text).toContain('"openingParts"')
+    for (const key of ['scene', 'creditHost', 'creditGuest', 'hook']) expect(text).toContain(`"${key}"`)
+    expect(text).toMatch(/creditHost[^\n]*Nathan/)
+    expect(text).toMatch(/creditGuest[^\n]*Nate\b/)
+    expect(text).toMatch(/ends? with "\?"/)
+    expect(text).not.toContain('"openingNarration"')
   })
 
   it('states the rules the case must follow', () => {

@@ -24,10 +24,10 @@ function seededRng(seed: number): () => number {
 /** Four valid questions, each with four answers. */
 function validSet(): Question[] {
   return [
-    { beat: 'The lights flicker. Somewhere below deck, glass breaks.', text: 'What went wrong just before the crime?', answers: ['A power cut', 'A loud crash', 'An alarm', 'A scream'] },
+    { beat: 'The lights flicker around you. Somewhere below deck, glass breaks.', text: 'What went wrong just before the crime?', answers: ['A power cut', 'A loud crash', 'An alarm', 'A scream'] },
     { beat: 'You watch the crew at dinner. One chair scrapes back too fast.', text: 'Who was acting strangely?', answers: ['The captain', 'The cook', 'The guest', 'The doctor'] },
     { beat: 'The corridor is empty now. You try to picture the last footsteps.', text: 'Where was the last place anyone saw the victim?', answers: ['The deck', 'The galley', 'The cabin', 'The hold'] },
-    { beat: 'Raised voices carried through the walls all evening.', text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A love letter'] },
+    { beat: 'Raised voices reach you through the walls all evening.', text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A love letter'] },
   ]
 }
 
@@ -113,10 +113,11 @@ describe('scene beats (R37)', () => {
   it(`caps a beat at ${BEAT_MAX_WORDS} words`, () => {
     expect(BEAT_MAX_WORDS).toBe(30)
     const atLimit = validSet()
-    atLimit[0] = { ...atLimit[0], beat: Array.from({ length: 30 }, () => 'word').join(' ') }
+    // Beats must address the player (R38), so the filler starts with "you".
+    atLimit[0] = { ...atLimit[0], beat: ['you', ...Array.from({ length: 29 }, () => 'word')].join(' ') }
     expect(validateQuestions(atLimit).ok).toBe(true)
     const tooLong = validSet()
-    tooLong[0] = { ...tooLong[0], beat: Array.from({ length: 31 }, () => 'word').join(' ') }
+    tooLong[0] = { ...tooLong[0], beat: ['you', ...Array.from({ length: 30 }, () => 'word')].join(' ') }
     expect(validateQuestions(tooLong).ok).toBe(false)
   })
 
@@ -127,6 +128,25 @@ describe('scene beats (R37)', () => {
     const blank = validSet()
     blank[1] = { ...blank[1], beat: '   ' }
     expect(validateQuestions(blank).ok).toBe(false)
+  })
+
+  it('requires the beat to address the player ("you" or "your") (R38)', () => {
+    const detached = validSet()
+    detached[0] = { ...detached[0], beat: 'Investigators examine the racket fragments.' }
+    const result = validateQuestions(detached)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/you/i)
+  })
+
+  it("rejects a beat that contains two or more of its question's answer options (R38)", () => {
+    const leaky = validSet()
+    leaky[1] = { ...leaky[1], beat: 'You wonder: was it the captain, or the cook?' }
+    const result = validateQuestions(leaky)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/options/i)
+    const one = validSet()
+    one[1] = { ...one[1], beat: 'You watch the captain pace the deck.' }
+    expect(validateQuestions(one).ok).toBe(true)
   })
 
   it('applies the tone guard to beats', () => {
@@ -146,6 +166,9 @@ describe('fallback bank', () => {
       expect(q.text.length).toBeLessThanOrEqual(120)
       expect(q.beat.trim().length, `"${q.text}" has a beat`).toBeGreaterThan(0)
       expect(q.beat.trim().split(/\s+/).length, `"${q.text}" beat is at most 30 words`).toBeLessThanOrEqual(30)
+      expect(q.beat, `"${q.text}" beat addresses the player`).toMatch(/\b(you|your)\b/i)
+      const leaked = q.answers.filter((a) => q.beat.toLowerCase().includes(a.toLowerCase()))
+      expect(leaked.length, `"${q.text}" beat does not give away 2+ options`).toBeLessThan(2)
       for (const a of q.answers) expect(a.length).toBeLessThanOrEqual(40)
     }
   })

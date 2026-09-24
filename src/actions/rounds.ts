@@ -140,7 +140,14 @@ export async function playerNames(tools: ActionTools, game: Game): Promise<Recor
 }
 
 /** Ask the AI for the case; fall back to the preset case after one retry. */
-async function writeCase(tools: ActionTools, game: Game, settingId: string, number: number, answers: AnsweredQuestion[]) {
+async function writeCase(
+  tools: ActionTools,
+  game: Game,
+  settingId: string,
+  number: number,
+  answers: AnsweredQuestion[],
+  players: { host: string; guest: string },
+) {
   const setting = SETTINGS.find((s) => s.id === settingId)
   if (!setting) return PRESET_CASE
   const rounds = must(await tools.query('rounds', { where: { gameId: game.id }, limit: 50 }), 'Loading the rounds')
@@ -150,9 +157,9 @@ async function writeCase(tools: ActionTools, game: Game, settingId: string, numb
   const generated = await askForJson<PresetCase>(
     tools,
     `case for round ${number} (${setting.id})`,
-    buildCasePrompt(setting, answers, earlierTitles),
+    buildCasePrompt(setting, answers, earlierTitles, players),
     (value) => {
-      const checked = validateCase(value, { settingName: setting.name })
+      const checked = validateCase(value, { settingName: setting.name, players })
       return checked.ok ? { ok: true, value: checked.case } : checked
     },
     2000,
@@ -186,7 +193,8 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
       const id = userInSeat(game, seat)
       return answers[id].map((a) => ({ player: names[id], question: a.question, answer: a.answer }))
     })
-    const theCase = await writeCase(tools, game, round.settingId, round.number, all)
+    const players = { host: names[game.host], guest: names[game.guest] }
+    const theCase = await writeCase(tools, game, round.settingId, round.number, all, players)
     await layOutAndDeal(tools, game, roundId, round.number, theCase)
   } catch (e) {
     await tools.update('rounds', roundId, { status: 'answering' })

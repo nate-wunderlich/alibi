@@ -59,10 +59,25 @@ export interface GeneratedCard {
 }
 
 /** The case as the AI returns it. */
+/**
+ * R38: the opening arrives as parts; code assembles them (assembleOpening),
+ * adding the suspect list itself, so its structure is guaranteed.
+ */
+export interface OpeningParts {
+  scene: string
+  creditHost: string
+  creditGuest: string
+  hook: string
+}
+
+export const SCENE_MAX_WORDS = 35
+export const CREDIT_MAX_WORDS = 22
+export const HOOK_MAX_WORDS = 14
+
 export interface GeneratedCase {
   title: string
   victim: string
-  openingNarration: string
+  openingParts: OpeningParts
   suspects: GeneratedCard[]
   weapons: GeneratedCard[]
   locations: GeneratedCard[]
@@ -98,18 +113,22 @@ const GROUPS: { key: 'suspects' | 'weapons' | 'locations'; kind: CardKind }[] = 
  * title may not simply repeat the setting's name. On success, returns the
  * case in the shape rounds are built from (the same shape as the preset case).
  */
-export function validateCase(input: unknown, options: { settingName?: string } = {}): CaseValidation {
+export function validateCase(
+  input: unknown,
+  options: { settingName?: string; players?: { host: string; guest: string } } = {},
+): CaseValidation {
   if (typeof input !== 'object' || input === null) return { ok: false, errors: ['Expected a case object.'] }
   const c = input as Record<string, unknown>
   const errors: string[] = []
 
-  for (const e of [
-    checkText(c.title, 'The title', TITLE_MAX),
-    checkText(c.victim, 'The victim', VICTIM_MAX),
-    checkText(c.openingNarration, 'The opening narration', NARRATION_MAX),
-  ]) {
+  for (const e of [checkText(c.title, 'The title', TITLE_MAX), checkText(c.victim, 'The victim', VICTIM_MAX)]) {
     if (e) errors.push(e)
   }
+
+  // R38: the opening comes as parts, checked here (names, caps, hook, tone guard).
+  const parts = c.openingParts as OpeningParts | undefined
+  if (typeof parts !== 'object' || parts === null) errors.push('Expected openingParts: { scene, creditHost, creditGuest, hook }.')
+  else errors.push(...validateOpeningParts(parts, options.players))
 
   const cards: PresetCase['cards'] = []
   for (const { key, kind } of GROUPS) {
@@ -134,11 +153,10 @@ export function validateCase(input: unknown, options: { settingName?: string } =
   const names = cards.map((card) => card.name.toLowerCase())
   if (new Set(names).size !== names.length) errors.push('Two cards share a name.')
 
-  // Tone guard: every piece of text the players will read.
+  // Tone guard: every other piece of text the players will read (the opening parts were checked above).
   const texts: [string, unknown][] = [
     ['The title', c.title],
     ['The victim', c.victim],
-    ['The opening narration', c.openingNarration],
     ...cards.flatMap((card): [string, unknown][] => [
       [`The card "${card.name}"`, card.name],
       [`The description of "${card.name}"`, card.description],
@@ -154,16 +172,100 @@ export function validateCase(input: unknown, options: { settingName?: string } =
     errors.push("The title repeats the setting's name.")
   }
 
+  // The stored opening is assembled by code: the parts plus the exact suspect names.
+  let openingNarration = ''
+  if (errors.length === 0 && parts) {
+    openingNarration = assembleOpening(
+      parts,
+      cards.filter((card) => card.kind === 'suspect').map((card) => card.name),
+    )
+    if (openingNarration.length > NARRATION_MAX) {
+      errors.push(`The assembled opening is longer than ${NARRATION_MAX} characters; shorten the scene and credits.`)
+    }
+  }
+
   if (errors.length > 0) return { ok: false, errors }
   return {
     ok: true,
-    case: {
-      title: String(c.title).trim(),
-      victim: String(c.victim).trim(),
-      openingNarration: String(c.openingNarration).trim(),
-      cards,
-    },
+    case: { title: String(c.title).trim(), victim: String(c.victim).trim(), openingNarration, cards },
   }
+}
+
+/** A sentence, with a full stop added if it has no closing punctuation. */
+function sentence(text: string): string {
+  const t = text.trim()
+  return /[.!?…]["')\]]?$/.test(t) ? t : `${t}.`
+}
+
+/**
+ * R38: the opening read aloud, assembled by code: the scene, each player's
+ * credit, the four exact suspect names, and the hook question.
+ */
+export function assembleOpening(parts: OpeningParts, suspectNames: string[]): string {
+  const list =
+    suspectNames.length > 1
+      ? `${suspectNames.slice(0, -1).join(', ')}, and ${suspectNames[suspectNames.length - 1]}`
+      : suspectNames.join('')
+  return [
+    sentence(parts.scene),
+    sentence(parts.creditHost),
+    sentence(parts.creditGuest),
+    `Four suspects remain: ${list}.`,
+    parts.hook.trim(),
+  ].join(' ')
+}
+
+/** How many times a name appears as a whole word (so "Nate" is not found inside "Nathan"). */
+function countName(text: string, name: string): number {
+  const escaped = name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (!escaped) return 0
+  return (text.match(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu')) ?? []).length
+}
+
+const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length
+
+/**
+ * R38: check the opening's parts. Each part is present, within its word cap,
+ * and passes the tone guard; the hook ends with "?". With the players' names,
+ * each credit names its own player exactly once and never the other player.
+ * Returns the problems (empty if fine), worded so a retry can fix them.
+ */
+export function validateOpeningParts(parts: OpeningParts, players?: { host: string; guest: string }): string[] {
+  const errors: string[] = []
+  const caps: [keyof OpeningParts, number][] = [
+    ['scene', SCENE_MAX_WORDS],
+    ['creditHost', CREDIT_MAX_WORDS],
+    ['creditGuest', CREDIT_MAX_WORDS],
+    ['hook', HOOK_MAX_WORDS],
+  ]
+  for (const [key, cap] of caps) {
+    const value = parts[key]
+    if (typeof value !== 'string' || value.trim() === '') {
+      errors.push(`openingParts.${key} is missing.`)
+      continue
+    }
+    if (words(value) > cap) errors.push(`openingParts.${key} has ${words(value)} words; the most is ${cap}.`)
+    const term = findGraphicTerm(value)
+    if (term) errors.push(`openingParts.${key} is too graphic ("${term}").`)
+  }
+  if (typeof parts.hook === 'string' && parts.hook.trim() !== '' && !parts.hook.trim().endsWith('?')) {
+    errors.push('openingParts.hook must be a question that ends with "?".')
+  }
+  if (players && errors.length === 0) {
+    const sameName = players.host.trim().toLowerCase() === players.guest.trim().toLowerCase()
+    const credits: [keyof OpeningParts, string, string][] = [
+      ['creditHost', players.host, players.guest],
+      ['creditGuest', players.guest, players.host],
+    ]
+    for (const [key, own, other] of credits) {
+      const n = countName(parts[key], own)
+      if (n !== 1) errors.push(`openingParts.${key} must name ${own} exactly once (found ${n}).`)
+      if (!sameName && countName(parts[key], other) > 0) {
+        errors.push(`openingParts.${key} must not mention ${other}; that is the other player's credit.`)
+      }
+    }
+  }
+  return errors
 }
 
 export interface Prompt {
@@ -222,7 +324,15 @@ export function buildQuestionPrompt(setting: Setting): Prompt {
  * AI writes the cast; code picks the solution afterwards, so the AI never
  * knows who did it.
  */
-export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], earlierTitles: string[]): Prompt {
+export function buildCasePrompt(
+  setting: Setting,
+  answers: AnsweredQuestion[],
+  earlierTitles: string[],
+  players?: { host: string; guest: string },
+): Prompt {
+  // The host answers first; the guest is the other name. Callers normally pass both.
+  const host = players?.host ?? answers[0]?.player ?? 'Player 1'
+  const guest = players?.guest ?? answers.find((a) => a.player !== host)?.player ?? 'Player 2'
   return {
     system: [
       'You write the cases for alibi, a two-player detective game with 12 cards per case.',
@@ -242,14 +352,18 @@ export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], e
       'Write:',
       '- a title (at most 6 words). The title must not repeat the setting\'s name.',
       '- the victim (a name plus at most 8 words);',
-      '- an opening narration of 70 to 90 words, read aloud at the start. It credits each player\'s choices by name (for example: "Because Nathan let the merchant captain in..."), names all 4 suspects, and ends on a hook question;',
+      '- openingParts: four short pieces the game assembles into the opening read aloud. The game adds the list of the 4 suspects itself, so do not list them. It credits each player\'s choices by name:',
+      '  "scene": one or two sentences that set the scene, at most 35 words, with no player names;',
+      `  "creditHost": one sentence crediting ${host}'s choices (for example: "Because ${host} let the merchant captain in, ..."); it must contain the name "${host}" exactly once and must not mention ${guest}; at most 22 words;`,
+      `  "creditGuest": one sentence crediting ${guest}'s choices; it must contain the name "${guest}" exactly once and must not mention ${host}; at most 22 words;`,
+      '  "hook": one question, at most 14 words, that ends with "?";',
       '- 4 suspects: every one belongs to this setting and gets a believable motive in their description, because any of them could turn out to be the culprit;',
       '- 4 weapons: each is a possible METHOD for the incident described above, and only one will turn out true, so all 4 must be plausible;',
       '- 4 locations: places within this setting where it could have happened.',
       'Keep it light, like a party mystery game: no graphic injuries or gore; methods can be sinister but never gruesome.',
       'Be brief. Card names at most 4 words. Each description is ONE short sentence of at most 16 words (a suspect\'s motive fits in that sentence). All 12 names must be different.',
       'Every suspect, weapon, and location is an object with exactly two keys, "name" and "description".',
-      'Return: {"title": "", "victim": "", "openingNarration": "", "suspects": [{"name": "", "description": ""} x4], "weapons": [{"name": "", "description": ""} x4], "locations": [{"name": "", "description": ""} x4]}',
+      'Return: {"title": "", "victim": "", "openingParts": {"scene": "", "creditHost": "", "creditGuest": "", "hook": ""}, "suspects": [{"name": "", "description": ""} x4], "weapons": [{"name": "", "description": ""} x4], "locations": [{"name": "", "description": ""} x4]}',
     ].join('\n'),
   }
 }

@@ -50,6 +50,14 @@ function checkQuestion(item: unknown, n: number): string[] {
     }
     const term = findGraphicTerm(beat)
     if (term) errors.push(`Question ${n}'s scene beat is too graphic ("${term}").`)
+    // R38: the beat speaks to the player, and does not give the options away.
+    if (!/\b(you|your)\b/i.test(beat)) errors.push(`Question ${n}'s scene beat must address the player ("you" or "your").`)
+    if (Array.isArray(answers)) {
+      const leaked = answers.filter((a) => typeof a === 'string' && a.trim() && beat.toLowerCase().includes(a.trim().toLowerCase()))
+      if (leaked.length >= 2) {
+        errors.push(`Question ${n}'s scene beat gives away ${leaked.length} of its answer options (${leaked.join(', ')}); it may hint at one at most.`)
+      }
+    }
   }
 
   if (typeof text !== 'string' || text.trim() === '') errors.push(`Question ${n} has no text.`)
@@ -77,7 +85,8 @@ function checkQuestion(item: unknown, n: number): string[] {
 /**
  * Check a round's questions, typically straight from the AI's JSON.
  * Rules: exactly 4 questions, each with a scene beat (up to 30 words, passing
- * the tone guard) and exactly 4 answers; no empty text; questions up to 120
+ * the tone guard, addressing the player, and naming at most one of its own
+ * options) and exactly 4 answers; no empty text; questions up to 120
  * characters, answers up to 40; no repeated question, and no repeated answer
  * within a question.
  */
@@ -111,19 +120,19 @@ const BANK_BY_ASPECT: Record<'who' | 'what' | 'where' | 'motive', Question[]> = 
     { beat: 'Raised voices echo down the hall that afternoon. You catch only the end of it.', text: 'Who argued with the victim that day?', answers: ['Their partner', 'Their boss', 'An old friend', 'Nobody, oddly'] },
   ],
   what: [
-    { beat: 'Everything is quiet. Then, all at once, it is not.', text: 'What went wrong just before the crime?', answers: ['The lights went out', 'A loud crash', 'An alarm went off', 'Someone screamed'] },
+    { beat: 'Everything around you is quiet. Then, all at once, it is not.', text: 'What went wrong just before the crime?', answers: ['The lights went out', 'A loud crash', 'An alarm went off', 'Someone screamed'] },
     { beat: 'You kneel where it happened. Something small sits where it should not be.', text: 'What strange clue was left behind?', answers: ['A torn note', 'A muddy footprint', 'A broken watch', 'A strange smell'] },
     { beat: 'The night before, you notice an empty spot on a shelf.', text: 'What went missing the night before?', answers: ['A key', 'A map', 'A letter', 'A tool'] },
   ],
   where: [
     { beat: 'You retrace the victim\'s last steps. The trail goes cold in one place.', text: 'Where was the victim last seen?', answers: ['Near the entrance', 'In a hidden corner', 'By the windows', 'Somewhere off-limits'] },
-    { beat: 'As night falls, everyone drifts to the same place, as if pulled there.', text: 'Where did everyone gather that evening?', answers: ['The main hall', 'The kitchen', 'Outside', 'The quietest room'] },
+    { beat: 'As night falls, you watch everyone drift to the same place, as if pulled there.', text: 'Where did everyone gather that evening?', answers: ['The main hall', 'The kitchen', 'Outside', 'The quietest room'] },
     { beat: 'You test every handle on your rounds. One turns when it should not.', text: 'Where was a door found unlocked?', answers: ['The storeroom', 'The back exit', 'The office', 'The basement'] },
   ],
   motive: [
     { beat: 'Old tensions simmer all evening. You can feel them in every glance.', text: 'What was everyone arguing about?', answers: ['Money', 'A secret', 'An old feud', 'A broken promise'] },
     { beat: 'You step inside and the air changes. Everyone feels it.', text: 'What mood hung over the place?', answers: ['Nervous', 'Festive', 'Gloomy', 'Suspicious'] },
-    { beat: 'The victim smiled like someone holding a winning card.', text: 'What did the victim know that others did not?', answers: ['Where the treasure is', 'Who lied', 'A way out', 'A dangerous plan'] },
+    { beat: 'You remember the victim smiling like someone holding a winning card.', text: 'What did the victim know that others did not?', answers: ['Where the treasure is', 'Who lied', 'A way out', 'A dangerous plan'] },
   ],
 }
 
