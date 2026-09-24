@@ -121,6 +121,7 @@ test('each player receives only their own hand, nobody receives the solution or 
   // then receives only their own row, never the other player's.
   for (const u of [alice, bob]) {
     await u.page.goto(`/game/${gameId}`)
+    await u.page.getByTestId('tab-grid').click()
     const openCell = u.page.locator('[data-testid="grid-cell"][data-fixed="false"]').first()
     await openCell.click()
     await expect(openCell, `${u.name}'s tap is recorded`).toHaveAttribute('data-mark', 'has', { timeout: 15_000 })

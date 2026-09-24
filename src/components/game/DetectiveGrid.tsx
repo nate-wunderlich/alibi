@@ -13,7 +13,7 @@
 import { useRef, useState } from 'react'
 import { useMutations, useQuery } from 'deepspace'
 import { cn } from '@/lib/utils'
-import { FileLabel, KIND_LABEL, KINDS } from './CardView'
+import { KIND_LABEL, KINDS } from './CardView'
 import { alibisOf, type GameView, type Round } from './useGameData'
 
 type Column = 'me' | 'opponent' | 'envelope'
@@ -84,16 +84,15 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
   }
 
   return (
-    <div data-testid="detective-grid">
-      <FileLabel>Detective grid · only you see this</FileLabel>
-      <table className="w-full border-collapse text-sm">
+    <div data-testid="detective-grid" className="flex min-h-0 flex-col">
+      <table className="w-full table-fixed border-collapse text-sm">
         <thead>
           <tr className="text-muted-foreground">
-            <th className="py-1 text-left font-normal">
+            <th className="py-0.5 text-left font-normal">
               <span className="sr-only">Card</span>
             </th>
             {COLUMNS.map((c) => (
-              <th key={c.id} className="w-12 py-1 text-center font-mono text-[11px] font-normal uppercase tracking-widest">
+              <th key={c.id} className="w-12 py-0.5 text-center font-mono text-[10px] font-normal uppercase tracking-widest">
                 {c.label}
               </th>
             ))}
@@ -102,7 +101,7 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
         {KINDS.map((kind) => (
           <tbody key={kind}>
             <tr>
-              <th colSpan={4} className="pt-3 pb-1 text-left font-mono text-[10px] font-normal uppercase tracking-widest text-primary">
+              <th colSpan={4} className="pt-1 pb-0 text-left font-mono text-[10px] font-normal uppercase tracking-widest text-primary">
                 {KIND_LABEL[kind]}s
               </th>
             </tr>
@@ -119,15 +118,15 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
                     data-face-up={faceUp ? 'true' : 'false'}
                     className="border-t border-border"
                   >
-                    <td className="py-1 pr-2 leading-tight">
+                    <td className="truncate py-0 pr-2 text-xs leading-tight" title={card.name}>
+                      {faceUp && <span className="mr-1 font-mono text-[9px] uppercase text-muted-foreground">up</span>}
                       {card.name}
-                      {faceUp && <span className="ml-1 font-mono text-[10px] uppercase text-muted-foreground">face up</span>}
                     </td>
                     {COLUMNS.map((col) => {
                       const fixed = known[col.id] !== undefined
                       const mark: Mark = fixed ? known[col.id]! : (marks[card.id]?.[col.id] ?? '')
                       return (
-                        <td key={col.id} className="p-0.5">
+                        <td key={col.id} className="px-0.5 py-px">
                           <button
                             type="button"
                             data-testid="grid-cell"
@@ -138,7 +137,7 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
                             onClick={() => tap(card.id, col.id)}
                             aria-label={`${card.name}, ${col.label}: ${SPOKEN[mark]}${fixed ? ' (known)' : ''}`}
                             className={cn(
-                              'flex h-10 w-full items-center justify-center rounded-sm border font-mono text-base',
+                              'flex h-6 w-full items-center justify-center rounded-sm border font-mono text-sm',
                               fixed
                                 ? 'border-transparent bg-muted text-muted-foreground'
                                 : 'border-border bg-card hover:bg-accent',
@@ -156,8 +155,8 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
           </tbody>
         ))}
       </table>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Tap to cycle: ✓ has it, ✗ doesn&apos;t, ? maybe. Shaded cells are what you know for sure.
+      <p className="mt-1 text-[11px] text-muted-foreground" title="Tap a box to cycle: has it, does not have it, maybe. Shaded boxes are what you know for sure.">
+        Only you see this. Tap: ✓ ✗ ? · shaded = known
       </p>
     </div>
   )

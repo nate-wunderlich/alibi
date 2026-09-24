@@ -2,9 +2,31 @@
 
 import type { GameView } from './useGameData'
 
-export function Scoreboard({ view }: { view: GameView }) {
+export function Scoreboard({ view, compact = false }: { view: GameView; compact?: boolean }) {
   const { game, nameOf, round } = view
   if (!game) return null
+  // R47: one line for the table's top strip.
+  if (compact) {
+    return (
+      <div data-testid="series-score" className="flex items-center justify-between gap-2 text-sm">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="truncate text-muted-foreground">{nameOf(game.host)}</span>
+          <span data-testid="score-host" className="font-display text-lg font-bold">
+            {game.scoreHost}
+          </span>
+        </div>
+        <div className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          {round ? `Case ${round.number}` : 'Series'} · best of {game.bestOf}
+        </div>
+        <div className="flex min-w-0 items-baseline justify-end gap-1.5">
+          <span data-testid="score-guest" className="font-display text-lg font-bold">
+            {game.scoreGuest}
+          </span>
+          <span className="truncate text-muted-foreground">{nameOf(game.guest)}</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div
       data-testid="series-score"

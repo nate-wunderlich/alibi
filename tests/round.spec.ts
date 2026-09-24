@@ -345,6 +345,8 @@ test("R41: after turn 4, both players see one alibi clearing a card from the sta
   let clearedId = ''
   for (const p of [first, second]) {
     await p.page.goto(`/game/${gameId}`)
+    // R47: the log is its own tab.
+    await p.page.getByTestId('tab-log').click()
     const alibi = p.page.getByTestId('round-alibi')
     await expect(alibi, `${p.name} sees exactly one alibi`).toHaveCount(1, { timeout: 15_000 })
     await expect(alibi).toContainText('Alibi')
@@ -353,20 +355,22 @@ test("R41: after turn 4, both players see one alibi clearing a card from the sta
     expect(cardId, 'both players see the same alibi').toBe(clearedId)
     expect(f.hand, "the cleared card is from the starter's hand").toContain(cardId)
     await expect(alibi, 'the alibi names its card').toContainText(cardName(f, cardId))
-    // It comes after the 4th guess in the log. The alibi arrives with the round, the guesses by their own
-    // subscription, so wait for all 4 guesses before reading the order (D52: the snapshot raced them once).
+    // It was drawn after the 4th guess; the log is newest first (R47), so it sits above the 4 guesses.
+    // The alibi arrives with the round, the guesses by their own subscription, so wait for all 4
+    // guesses before reading the order (D52: the snapshot raced them once).
     await expect(p.page.getByTestId('round-log-entry'), `${p.name} sees the 4 guesses`).toHaveCount(4, { timeout: 15_000 })
     const entries = await p.page
       .locator('[data-testid="round-log-entry"], [data-testid="round-alibi"]')
       .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')))
-    expect(entries, 'the alibi follows the 4 guesses').toEqual([
-      'round-log-entry',
-      'round-log-entry',
-      'round-log-entry',
-      'round-log-entry',
+    expect(entries, 'newest first: the alibi, then the 4 guesses').toEqual([
       'round-alibi',
+      'round-log-entry',
+      'round-log-entry',
+      'round-log-entry',
+      'round-log-entry',
     ])
     // Both grids mark it as not in the envelope, and who holds it.
+    await p.page.getByTestId('tab-grid').click()
     const cell = (column: string) =>
       p.page.locator(`[data-testid="grid-row"][data-card-id="${cardId}"] [data-testid="grid-cell"][data-column="${column}"]`)
     await expect(cell('envelope'), `${p.name}'s grid: not in the envelope`).toHaveAttribute('data-mark', 'no')

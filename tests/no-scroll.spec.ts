@@ -3,10 +3,12 @@
  * browser bars) and 1280x720, with no page scroll and no scrolling panel.
  *
  * One walk through a best-of-3 series reaches every screen; each is measured
- * at both sizes. Every measurement is a soft assertion, so one run reports
+ * at both sizes; a tab panel whose content is taller than the panel (clipped
+ * out of view) fails too. Every measurement is a soft assertion, so one run reports
  * the whole map. Results are printed as "[no-scroll] {json}" lines and saved
  * to no-scroll-results.json; each failing screen at 390x660 is saved as a
- * screenshot, both in this test's output folder.
+ * screenshot, both in this test's output folder. Each table tab and dialog is
+ * also saved at 390x660 (pass or fail), for a person to look at.
  *
  * Needs the test accounts named "Alice" and "Bob".
  */
@@ -43,6 +45,12 @@ async function measureNow(page: Page) {
       const id = el.getAttribute('data-testid') ?? el.getAttribute('data-slot') ?? ''
       panels.push({ element: `${el.tagName.toLowerCase()}${id ? `[${id}]` : ''}`, overflow })
     }
+    // A tab panel whose content is taller than the panel is clipped out of view (D69: the face-up
+    // card sat under the tab bar while nothing scrolled), so it fails as well.
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[role="tabpanel"]'))) {
+      const overflow = el.scrollHeight - el.clientHeight
+      if (overflow > 1) panels.push({ element: `clipped ${el.getAttribute('data-testid') ?? 'tabpanel'}`, overflow })
+    }
     return { pageOverflow: se.scrollHeight - window.innerHeight, panels }
   })
 }
@@ -63,6 +71,13 @@ async function measure(page: Page, screen: string, testInfo: TestInfo) {
     }
     expect.soft(r.pass, `${screen} at ${vp.name}: page +${r.pageOverflow}px, ${r.panels.length} scrolling panel(s)`).toBe(true)
   }
+}
+
+/** A 390x660 screenshot of the current screen, pass or fail, for a person to look at (R47 table tabs and dialogs). */
+async function snap(page: Page, name: string, testInfo: TestInfo) {
+  await page.setViewportSize({ width: 390, height: 660 })
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: testInfo.outputPath(`${name}-390x660.png`) })
 }
 
 type Kind = 'suspect' | 'weapon' | 'location'
@@ -135,16 +150,35 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   const [starter, other] = aliceStarts ? [alice, bob] : [bob, alice]
   const [sv, ov] = aliceStarts ? [a, b] : [b, a]
 
-  // Table: the player on turn, and the waiting player (the grid is on the table).
-  for (const [u, who] of [
-    [starter, 'on turn'],
-    [other, 'waiting'],
-  ] as const) {
-    await u.page.goto(gameUrl(gameId))
-    await expect(u.page.getByTestId('table')).toBeVisible({ timeout: 60_000 })
-    await expect(u.page.getByTestId('detective-grid')).toBeVisible({ timeout: 15_000 })
-    await measure(u.page, `table (${who})`, testInfo)
-  }
+  // Table (R47: tabbed). The player on turn on Play; the waiting player on Play and on Grid.
+  await starter.page.goto(gameUrl(gameId))
+  await expect(starter.page.getByTestId('table')).toBeVisible({ timeout: 60_000 })
+  await starter.page.getByTestId('tab-play').click()
+  await expect(starter.page.getByTestId('guess-builder')).toBeVisible({ timeout: 15_000 })
+  await measure(starter.page, 'table: play (on turn)', testInfo)
+  await snap(starter.page, 'tab-play-on-turn', testInfo)
+  await starter.page.getByRole('button', { name: 'Skip and accuse' }).click()
+  await expect(starter.page.getByTestId('accuse-panel')).toBeVisible({ timeout: 15_000 })
+  await measure(starter.page, 'table: accuse (on turn)', testInfo)
+  await snap(starter.page, 'tab-play-accuse', testInfo)
+  await starter.page.getByRole('button', { name: 'Not yet' }).click()
+  await expect(starter.page.getByTestId('guess-builder')).toBeVisible({ timeout: 15_000 })
+  await starter.page.getByRole('button', { name: 'Read the opening' }).click()
+  await expect(starter.page.getByTestId('opening-narration')).toBeVisible({ timeout: 15_000 })
+  await snap(starter.page, 'dialog-opening', testInfo)
+  await starter.page.keyboard.press('Escape')
+  await expect(starter.page.getByTestId('opening-narration')).toHaveCount(0, { timeout: 15_000 })
+
+  await other.page.goto(gameUrl(gameId))
+  await expect(other.page.getByTestId('table')).toBeVisible({ timeout: 60_000 })
+  await other.page.getByTestId('tab-play').click()
+  await expect(other.page.getByTestId('turn-waiting')).toBeVisible({ timeout: 15_000 })
+  await measure(other.page, 'table: play (waiting)', testInfo)
+  await snap(other.page, 'tab-play-waiting', testInfo)
+  await other.page.getByTestId('tab-grid').click()
+  await expect(other.page.getByTestId('detective-grid')).toBeVisible({ timeout: 15_000 })
+  await measure(other.page, 'table: grid (waiting)', testInfo)
+  await snap(other.page, 'tab-grid', testInfo)
 
   // Choose a card to show: the starter names two of the other player's cards (different kinds).
   const [first] = ov.hand
@@ -153,8 +187,10 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   const pending = await mustCall<{ guessId: string; result: string }>(starter.page, 'guess', { roundId, ...choose })
   expect(pending.result).toBe('pending')
   await other.page.goto(gameUrl(gameId))
+  await other.page.getByTestId('tab-play').click()
   await expect(other.page.getByTestId('show-card-prompt')).toBeVisible({ timeout: 15_000 })
-  await measure(other.page, 'choose a card to show', testInfo)
+  await measure(other.page, 'table: choose a card to show', testInfo)
+  await snap(other.page, 'tab-play-choose', testInfo)
   await mustCall(other.page, 'showCard', { guessId: pending.guessId, cardId: second })
   await mustCall(starter.page, 'endTurn', { roundId })
 
@@ -172,11 +208,23 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
     await mustCall(u.page, 'guess', { roundId, ...noMatch(v) })
     await mustCall(u.page, 'endTurn', { roundId })
   }
+  // Log: the alibi and at least one guess (older guesses may fold into "and N earlier" at 390x660).
   await starter.page.goto(gameUrl(gameId))
-  await expect(starter.page.getByTestId('round-log-entry')).toHaveCount(4, { timeout: 15_000 })
+  await expect(starter.page.getByTestId('table')).toBeVisible({ timeout: 60_000 })
+  await starter.page.getByTestId('tab-log').click()
   await expect(starter.page.getByTestId('round-alibi')).toHaveCount(1, { timeout: 15_000 })
+  await expect(starter.page.getByTestId('round-log-entry').first()).toBeVisible({ timeout: 15_000 })
   await measure(starter.page, 'table: log (4 guesses and an alibi)', testInfo)
+  await snap(starter.page, 'tab-log', testInfo)
+  // Cast: 12 tiles; a tile opens its details.
+  await starter.page.getByTestId('tab-cast').click()
+  await expect(starter.page.getByTestId('cast-card')).toHaveCount(12, { timeout: 15_000 })
   await measure(starter.page, 'table: cast', testInfo)
+  await snap(starter.page, 'tab-cast', testInfo)
+  await starter.page.getByTestId('cast-card').first().click()
+  await expect(starter.page.getByTestId('cast-detail')).toBeVisible({ timeout: 15_000 })
+  await snap(starter.page, 'dialog-cast-detail', testInfo)
+  await starter.page.keyboard.press('Escape')
 
   // Reveal: the starter accuses wrongly, so the other player wins round 1.
   const wrongSuspect = [...sv.kindOf.entries()].find(([id, k]) => k === 'suspect' && id !== envelope.suspect)![0]

@@ -30,7 +30,9 @@ export default function AppLayout() {
       <AuthBoot>
         <div className="flex h-screen flex-col bg-background overflow-hidden">
           <Navigation />
-          <main className="flex-1 overflow-y-auto min-h-0">
+          {/* relative: absolutely positioned descendants (e.g. sr-only labels) stay inside main
+              instead of stretching the document (D68: the grid's sr-only "Card" label did). */}
+          <main className="relative flex-1 overflow-y-auto min-h-0">
             <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground">Loading...</div>}>
               <Outlet />
             </Suspense>

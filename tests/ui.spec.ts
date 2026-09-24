@@ -101,34 +101,39 @@ test('create, join, lobby, start, table, and a guess seen by both players', asyn
   await expect(waiter.page.getByTestId('turn-waiting')).toBeVisible(T)
   await expect(waiter.page.getByTestId('guess-builder')).toHaveCount(0)
 
-  // The starter builds and submits a guess; it appears in both round logs.
-  await pickFirst(starter.page, 'guess-suspect')
-  await pickFirst(starter.page, 'guess-weapon')
-  await pickFirst(starter.page, 'guess-location')
-  await starter.page.getByTestId('guess-submit').click()
-  for (const u of [starter, waiter]) {
-    await expect(u.page.getByTestId('round-log-entry'), `${u.name} sees the guess in the log`).toHaveCount(1, T)
-  }
-
-  // If the waiting player holds two or three of the named cards, they choose one to show.
-  const starterEntry = starter.page.getByTestId('round-log-entry').first()
-  if ((await starterEntry.getAttribute('data-result')) === 'pending') {
-    await waiter.page.getByTestId('show-card').first().click()
-  }
-  await expect(starterEntry, "the starter's guess resolves").toHaveAttribute('data-result', /^(shown|none)$/, T)
-
-  // Detective grid (SPEC.md "Detective grid"): what the starter provably knows is pre-filled and locked.
+  // R47: the table is tabbed. Play shows the hand and the face-up card; read them there first.
   const cardIds = async (page: Page, testId: string) =>
     page.getByTestId(testId).evaluateAll((els) => els.map((el) => el.getAttribute('data-card-id') ?? ''))
   const starterHand = await cardIds(starter.page, 'hand-card')
   const waiterHand = await cardIds(waiter.page, 'hand-card')
   const [faceUp] = await cardIds(starter.page, 'face-up-card')
+
+  // The starter builds and submits a guess; it appears in both round logs (the Log tab).
+  await pickFirst(starter.page, 'guess-suspect')
+  await pickFirst(starter.page, 'guess-weapon')
+  await pickFirst(starter.page, 'guess-location')
+  await starter.page.getByTestId('guess-submit').click()
+  for (const u of [starter, waiter]) {
+    await u.page.getByTestId('tab-log').click()
+    await expect(u.page.getByTestId('round-log-entry'), `${u.name} sees the guess in the log`).toHaveCount(1, T)
+  }
+
+  // If the waiting player holds two or three of the named cards, they choose one to show (on the Play tab).
+  const starterEntry = starter.page.getByTestId('round-log-entry').first()
+  if ((await starterEntry.getAttribute('data-result')) === 'pending') {
+    await waiter.page.getByTestId('tab-play').click()
+    await waiter.page.getByTestId('show-card').first().click()
+  }
+  await expect(starterEntry, "the starter's guess resolves").toHaveAttribute('data-result', /^(shown|none)$/, T)
+
+  // Detective grid (SPEC.md "Detective grid"): what the starter provably knows is pre-filled and locked.
   const shown = (await starterEntry.getAttribute('data-shown-card-id')) ?? ''
   expect(starterHand).toHaveLength(4)
 
   const cell = (page: Page, cardId: string, column: 'me' | 'opponent' | 'envelope') =>
     page.locator(`[data-testid="grid-row"][data-card-id="${cardId}"] [data-testid="grid-cell"][data-column="${column}"]`)
 
+  await starter.page.getByTestId('tab-grid').click()
   await expect(starter.page.getByTestId('detective-grid')).toBeVisible(T)
   await expect(starter.page.getByTestId('grid-row'), 'the grid lists all 12 cards').toHaveCount(12)
 
@@ -169,8 +174,10 @@ test('create, join, lobby, start, table, and a guess seen by both players', asyn
     await expect(target).toHaveAttribute('data-mark', mark, T)
   }
   await starter.page.reload()
+  await starter.page.getByTestId('tab-grid').click()
   await expect(cell(starter.page, open, 'envelope'), 'the mark survives a reload').toHaveAttribute('data-mark', 'maybe', T)
 
   // The other player's grid is their own: none of the starter's marks.
+  await waiter.page.getByTestId('tab-grid').click()
   await expect(cell(waiter.page, open, 'envelope'), "the other player does not see the starter's mark").toHaveAttribute('data-mark', '', T)
 })

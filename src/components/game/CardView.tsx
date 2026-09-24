@@ -50,11 +50,37 @@ export function CardView({
 }
 
 /**
+ * R47: a card as a small one-line chip (the hand, the face-up card, a choice
+ * to show): kind, name, and a small face for suspects.
+ */
+export function CardChip({
+  card,
+  className,
+  ...props
+}: {
+  card: Card | undefined
+  className?: string
+  'data-testid'?: string
+  'data-card-id'?: string
+}) {
+  if (!card) return <div className={cn('h-11 animate-pulse rounded-sm bg-muted', className)} {...props} />
+  return (
+    <div className={cn('flex h-11 items-center gap-2 rounded-sm border border-border bg-card px-2', className)} {...props}>
+      {card.kind === 'suspect' && <SuspectFace card={card} size="h-8 w-8" />}
+      <div className="min-w-0 flex-1 leading-tight">
+        <div className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">{KIND_LABEL[card.kind]}</div>
+        <div className="truncate text-sm font-semibold text-foreground">{card.name}</div>
+      </div>
+    </div>
+  )
+}
+
+/**
  * A suspect's portrait (R35) once the background job has painted it, or the
  * stamped initials until then. Both fill the same fixed box, so nothing on the
  * page moves when the picture arrives.
  */
-function SuspectFace({ card, size }: { card: Card; size: string }) {
+export function SuspectFace({ card, size }: { card: Card; size: string }) {
   const box = cn('shrink-0 overflow-hidden rounded-sm border border-border bg-muted', size)
   if (card.imageUrl) {
     return <img src={card.imageUrl} loading="lazy" alt={card.name} className={cn(box, 'object-cover')} />
