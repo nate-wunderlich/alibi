@@ -185,6 +185,19 @@ R39. Players' account names never reach the AI and never appear in
     token of either player's display name (case-insensitive, whole word,
     tokens of 3+ letters). playerNames() is no longer used for prompts.
 
+R40. Keep AI cases off the fallback (refines R39, R18 tone guard). (1)
+    Name guard matches only capitalized whole-word tokens (3+ letters)
+    of either player's display name. On a hit, code replaces that token
+    everywhere in the generated case (every field, consistently) with a
+    neutral name from a fixed list that shares no token with either
+    player, then re-validates; no retry is spent and no name reaches the
+    AI. The same substitution applies to question sets and the
+    confession. (2) The case and question prompts list the tone-guard
+    terms explicitly as words to avoid. (3) The case gets up to 3
+    attempts before the preset fallback. (4) The In the Tall Grass
+    setting text is softened so it does not invite graphic detail; the
+    concept is unchanged (architect wording edit, logged).
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
