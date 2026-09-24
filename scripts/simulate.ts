@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * node scripts/simulate.ts [rounds]
+ * node scripts/simulate.ts [rounds] [config ...]
+ *
+ * Configs are schedule:source, e.g. A B:either B:starter C:starter; with
+ * none given, every config runs. Each config keeps its own seed whatever
+ * else runs, so a row always reproduces.
  *
  * D45: simulate alibi schedules over the REAL rules (src/game/rules.ts:
  * deal, resolveGuess, checkAccusation) before building anything. No app
@@ -12,6 +16,8 @@
  * 2+). A right accusation wins the round; a wrong one loses it.
  *
  * Players:
+ * Both player models below are the standard (D47, architect).
+ *
  * - CAREFUL keeps every possible envelope consistent with what it has seen
  *   (its hand, the face-up card, cards shown to it, "no match" results,
  *   alibis). The envelope fixes the opponent's hand (the 7 unseen cards are
@@ -20,14 +26,24 @@
  *   leaves the fewest possible envelopes on average, and accuses only when
  *   exactly one envelope is left.
  * - CASUAL remembers only the cards it has seen (hand, face up, shown,
- *   alibis), guesses a random unseen card of each kind, and accuses when 2
- *   or fewer candidate envelopes are left (a coin flip at 2).
+ *   alibis) and ignores "no match" results. It guesses a random unseen card
+ *   of each kind, and accuses (at the start of its turn or right after its
+ *   guess) when 2 or fewer possible envelopes are left: the product of its
+ *   unseen suspects, weapons, and locations. It names a random unseen card
+ *   of each kind, so at 2 it is a coin flip.
  *
  * Alibis clear one card that is not in the envelope and not already public
  * (face up or cleared); both players learn it. Schedules: A none; B one
  * after every full turn pair; C one after every second pair; D like B,
  * capped at 2 per round. Source: (i) random from either hand; (ii) from the
- * hand of the player who just moved (the second mover of the pair).
+ * hand of the player who just moved (the second mover of the pair, so
+ * always the non-starter); (iii) from the starter's hand (the player who
+ * moved first in the round). Cards already cleared are skipped; if the
+ * source has none left, there is no alibi.
+ *
+ * Below the table: the chance the host wins a best-of-3 CAREFUL vs CAREFUL
+ * series with the alternating starter (host starts rounds 1 and 3), from
+ * the per-round starter win rate p: p(1-p) + (p^2 + (1-p)^2) p.
  *
  * "Guesses" counts the guesses made by the player who accused (their own,
  * not the round total): mean and max over rounds won by a right accusation.
@@ -154,7 +170,7 @@ function envelopeOf(env: number): Triple {
 }
 
 type Schedule = 'A' | 'B' | 'C' | 'D'
-type Source = 'either' | 'mover'
+type Source = 'either' | 'mover' | 'starter'
 type Kind = 'careful' | 'casual'
 
 interface Outcome {
@@ -200,7 +216,8 @@ function playRound(kinds: Record<Player, Kind>, starter: Player, schedule: Sched
       const due =
         schedule === 'B' || (schedule === 'C' && pair % 2 === 0) || (schedule === 'D' && alibis < 2)
       if (due) {
-        const hands = source === 'either' ? [...d.hands.host, ...d.hands.guest] : d.hands[current]
+        const hands =
+          source === 'either' ? [...d.hands.host, ...d.hands.guest] : source === 'mover' ? d.hands[current] : d.hands[starter]
         const eligible = hands.map((c) => c.id).filter((id) => !cleared.has(id))
         if (eligible.length > 0) {
           const card = pickOne(eligible, rng)
@@ -258,10 +275,20 @@ function run(matchup: 'cc' | 'cx', schedule: Schedule, source: Source, rounds: n
 }
 
 const ROUNDS = Number(process.argv[2] ?? 20000)
-const CONFIGS: { schedule: Schedule; source: Source | null }[] = [
+const WANTED = process.argv.slice(3)
+// New configs go at the end, so the older rows keep their seeds (and their numbers).
+const ALL_CONFIGS: { schedule: Schedule; source: Source | null }[] = [
   { schedule: 'A', source: null },
   ...(['B', 'C', 'D'] as Schedule[]).flatMap((schedule) => (['either', 'mover'] as Source[]).map((source) => ({ schedule, source }))),
+  ...(['B', 'C', 'D'] as Schedule[]).map((schedule) => ({ schedule, source: 'starter' as Source })),
 ]
+const key = (c: { schedule: Schedule; source: Source | null }) => (c.source ? `${c.schedule}:${c.source}` : c.schedule)
+const unknownConfigs = WANTED.filter((w) => !ALL_CONFIGS.some((c) => key(c) === w))
+if (unknownConfigs.length) {
+  console.error(`Unknown config(s): ${unknownConfigs.join(', ')}. Known: ${ALL_CONFIGS.map(key).join(' ')}`)
+  process.exit(1)
+}
+const CONFIGS = ALL_CONFIGS.map((c, seedIndex) => ({ ...c, seedIndex })).filter((c) => WANTED.length === 0 || WANTED.includes(key(c)))
 const pct = (k: number) => `${((100 * k) / ROUNDS).toFixed(1)}%`
 const LABEL: Record<Schedule, string> = {
   A: 'A none',
@@ -283,14 +310,19 @@ const header = [
   'CvX <=1 guess',
 ]
 const rows: string[][] = []
+const SOURCE_LABEL: Record<Source, string> = { either: '(i) either hand', mover: '(ii) mover', starter: '(iii) starter' }
+const series: string[] = []
 let totalTimeouts = 0
-CONFIGS.forEach(({ schedule, source }, i) => {
-  const cc = run('cc', schedule, source ?? 'either', ROUNDS, 1000 + i)
-  const cx = run('cx', schedule, source ?? 'either', ROUNDS, 2000 + i)
+CONFIGS.forEach(({ schedule, source, seedIndex }) => {
+  const cc = run('cc', schedule, source ?? 'either', ROUNDS, 1000 + seedIndex)
+  const cx = run('cx', schedule, source ?? 'either', ROUNDS, 2000 + seedIndex)
+  const p = cc.starterWins / ROUNDS
+  const hostBo3 = p * (1 - p) + (p * p + (1 - p) * (1 - p)) * p
+  series.push(`${LABEL[schedule]} ${source ? SOURCE_LABEL[source] : '(n/a)'}: starter p = ${(100 * p).toFixed(1)}%, host wins best-of-3 = ${(100 * hostBo3).toFixed(1)}%`)
   totalTimeouts += cc.timeouts + cx.timeouts
   rows.push([
     LABEL[schedule],
-    source === null ? '(n/a)' : source === 'either' ? '(i) either hand' : '(ii) mover',
+    source === null ? '(n/a)' : SOURCE_LABEL[source],
     cc.meanGuesses.toFixed(2),
     String(cc.maxGuesses),
     pct(cc.starterWins),
@@ -309,3 +341,5 @@ console.log(line(header))
 console.log('|' + widths.map((w) => '-'.repeat(w + 2)).join('|') + '|')
 for (const r of rows) console.log(line(r))
 console.log(`timeouts (rounds over ${MAX_TURNS} turns, excluded): ${totalTimeouts}`)
+console.log('\nBest-of-3, CAREFUL vs CAREFUL, host starts rounds 1 and 3:')
+for (const s of series) console.log(`  ${s}`)
