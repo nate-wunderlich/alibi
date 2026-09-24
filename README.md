@@ -56,7 +56,7 @@ npm run samples -- 3     # AI prose samples; needs npm run dev and a test accoun
 node scripts/simulate.ts 20000   # round simulator over the real rules
 ```
 
-The e2e specs sign in as two local test accounts with the display names Alice and Bob. Create them with `npx deepspace test accounts create --email <name>@deepspace.test --name <Name> --password-stdin`.
+The e2e specs sign in as two local test accounts with the display names Alice and Bob. Create them with `npx deepspace test accounts create --email alibi-<you>-a@deepspace.test --name Alice --password-stdin`, and the same with `alibi-<you>-b@deepspace.test --name Bob` for the second. Test-account emails are shared across all DeepSpace developers, so plain names are already taken (docs/FRICTION.md, entry 5).
 
 ## Docs
 
