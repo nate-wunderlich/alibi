@@ -264,6 +264,19 @@ R45. Word caps are soft on the final case attempt (refines R38, R40,
     the UI: it shows in the story itself. The secrecy spec's time budget
     is raised for the test accounts' long play history.
 
+R46. A player-facing how-to-play guide, viewable at any time (Nate). One
+    content component, used by a public route /how-to-play (no sign-in,
+    no integration calls) and by an in-game panel. A "How to play" link
+    sits in the header on every screen and on the landing and home
+    pages; during a game it opens the panel over the table (a dialog
+    from the existing UI kit) so play is never left. Sections: the goal;
+    the cards and the envelope; your turn (guess, show, accuse or end
+    turn); alibis (after every second turn pair, from the starter's
+    hand, both players see it); choice scenes before each case; the
+    detective grid; winning a round and a series (best of 3/5/7, coin
+    flip for the first starter, then alternating). Plain player
+    language, phone-first, no technical terms, no player names.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
