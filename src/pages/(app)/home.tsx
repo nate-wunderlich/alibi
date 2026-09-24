@@ -28,6 +28,13 @@ export default function HomePage() {
         <p className="mt-2 text-muted-foreground">
           Two detectives, one envelope. Start a series and share the code, or join your opponent&apos;s.
         </p>
+        <Link
+          data-testid="home-how-to-play"
+          to="/how-to-play"
+          className="mt-2 inline-block text-sm text-primary underline-offset-4 hover:underline"
+        >
+          How to play
+        </Link>
       </header>
 
       {isLoaded && !isSignedIn ? (

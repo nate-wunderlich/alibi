@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { AuthOverlay, useAuthProfileReady, signOut } from 'deepspace'
 import { ChevronDown, LogOut, Menu, Settings, X } from 'lucide-react'
+import { HowToPlayContent } from './HowToPlay'
 import { APP_NAME } from '../constants'
 import type { Role } from '../constants'
 import { nav } from '../nav'
@@ -26,6 +27,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Dialog,
+  DialogContent,
+  DialogTitle,
 } from './ui'
 
 export default function Navigation() {
@@ -33,6 +37,9 @@ export default function Navigation() {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  // R46: in a game the guide opens over the table, so play is never left; elsewhere it is a page.
+  const [howToPlayOpen, setHowToPlayOpen] = useState(false)
+  const inGame = location.pathname.startsWith('/game/')
 
   const profileReady = !isSignedIn || (!userLoading && !!user)
   const userRole = (user?.role ?? 'anonymous') as Role | 'anonymous'
@@ -78,6 +85,21 @@ export default function Navigation() {
           <div className="hidden items-center md:flex">{visibleNav.map(navLink)}</div>
 
           <div className="flex-1" />
+
+          {inGame ? (
+            <button
+              type="button"
+              data-testid="nav-how-to-play"
+              onClick={() => setHowToPlayOpen(true)}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              How to play
+            </button>
+          ) : (
+            <Link data-testid="nav-how-to-play" to="/how-to-play" className="text-sm text-muted-foreground hover:text-foreground">
+              How to play
+            </Link>
+          )}
 
           {!isLoaded ? null : isSignedIn && !profileReady ? (
             /* Signed in, profile still loading — skeleton pill, never the
@@ -166,6 +188,13 @@ export default function Navigation() {
       </nav>
 
       {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
+
+      <Dialog open={howToPlayOpen} onOpenChange={setHowToPlayOpen}>
+        <DialogContent data-testid="how-to-play-panel" className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogTitle className="font-display text-2xl font-bold">How to play</DialogTitle>
+          <HowToPlayContent />
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

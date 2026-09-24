@@ -48,6 +48,9 @@ export default function Landing() {
       >
         Enter the app
       </Link>
+      <Link to="/how-to-play" className="mt-4 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+        How to play
+      </Link>
     </div>
   )
 }
