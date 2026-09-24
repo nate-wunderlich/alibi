@@ -6,13 +6,14 @@
  *
  * The AI sees the setting and all 12 cards, never the envelope: this job
  * never reads the solution. Replies go through the name guard (R39, with
- * R40's substitution) and the tone guard; if the AI fails, the templates
- * stay. An alibi already drawn into the round keeps the text it was drawn
+ * R40's substitution), the tone guard, and R42's other-card check, card by
+ * card (R43): each valid alibi replaces its template, each invalid one keeps
+ * it. An alibi already drawn into the round keeps the text it was drawn
  * with. askForJson logs one line per paid call ("[ai] alibis for round ...").
  */
 
-import { askForJson, integrationFromCron } from '../actions/ai'
-import { alibiPrompt, templateAlibi, validateAlibis } from '../game/alibis'
+import { askForAlibis, integrationFromCron } from '../actions/ai'
+import { alibiOrder, templateAlibi } from '../game/alibis'
 import type { CardKind } from '../game/rules'
 import { SETTINGS } from '../game/settings'
 import type { PortraitDeps } from './portraits'
@@ -55,26 +56,21 @@ export async function runAlibis(deps: AlibiDeps, job: { roundId: string }): Prom
     displayName?: string
   }>[]
   const playerNames = players.map((p) => p.data.displayName ?? '').filter((n) => n.trim() !== '')
-  const names = cards.map((c) => c.data.name)
-
-  const written = await askForJson<Record<string, string>>(
+  const ordered = alibiOrder(cards.map((c) => ({ id: c.recordId, ...c.data })))
+  // R43: card by card. null keeps that card's template.
+  const written = await askForAlibis(
     integrationFromCron(deps.integrations),
     `alibis for round ${job.roundId}`,
-    alibiPrompt(
-      setting,
-      cards.map((c) => c.data),
-    ),
-    (value) => validateAlibis(value, names, playerNames),
-    1500,
-    { playerNames },
+    setting,
+    ordered,
+    playerNames,
   )
-  if (!written) return { written: 0 }
 
   let count = 0
-  for (const row of texts) {
-    const card = cards.find((c) => c.recordId === row.data.cardId)
-    const text = card ? written[card.data.name] : undefined
-    if (text) {
+  for (const [i, card] of ordered.entries()) {
+    const text = written[i]
+    const row = texts.find((t) => t.data.cardId === card.id)
+    if (text && row) {
       await deps.records.update('alibiTexts', row.recordId, { text })
       count++
     }

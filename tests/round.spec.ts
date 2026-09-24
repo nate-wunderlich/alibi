@@ -353,7 +353,9 @@ test("R41: after turn 4, both players see one alibi clearing a card from the sta
     expect(cardId, 'both players see the same alibi').toBe(clearedId)
     expect(f.hand, "the cleared card is from the starter's hand").toContain(cardId)
     await expect(alibi, 'the alibi names its card').toContainText(cardName(f, cardId))
-    // It comes after the 4th guess in the log.
+    // It comes after the 4th guess in the log. The alibi arrives with the round, the guesses by their own
+    // subscription, so wait for all 4 guesses before reading the order (D52: the snapshot raced them once).
+    await expect(p.page.getByTestId('round-log-entry'), `${p.name} sees the 4 guesses`).toHaveCount(4, { timeout: 15_000 })
     const entries = await p.page
       .locator('[data-testid="round-log-entry"], [data-testid="round-alibi"]')
       .evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')))

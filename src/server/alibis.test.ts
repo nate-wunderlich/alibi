@@ -45,9 +45,9 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
-describe('runAlibis (R41)', () => {
+describe('runAlibis (R41, R43)', () => {
   const good = JSON.stringify({
-    alibis: cards.map((c) => ({ card: c.data.name, alibi: `${c.data.name} was seen by the harbor watch all night.` })),
+    alibis: cards.map((_, i) => ({ n: i + 1, alibi: 'The harbor watch saw it far from the scene all night.' })),
   })
 
   it("overwrites the templates with the AI's alibis, and never reads the solution", async () => {
@@ -73,6 +73,19 @@ describe('runAlibis (R41)', () => {
     const { deps } = fakeDeps(good)
     await runAlibis(deps, { roundId: 'r1' })
     expect(await runAlibis(deps, { roundId: 'r1' })).toEqual({ written: 0 })
+    expect(deps.integrations.call).toHaveBeenCalledTimes(1)
+  })
+
+  it('card by card: overwrites only the valid alibis and keeps the templates for the rest', async () => {
+    const mixed = JSON.stringify({
+      alibis: cards.map((_, i) => ({ n: i + 1, alibi: i < 2 ? 'It was covered in blood.' : 'The harbor watch saw it all night.' })),
+    })
+    const { deps, texts } = fakeDeps(mixed)
+    expect(await runAlibis(deps, { roundId: 'r1' })).toEqual({ written: 10 })
+    const byCard = (id: string) => texts.find((t) => t.data.cardId === id)!.data.text
+    expect(byCard('c1')).toBe(templateAlibi(cards[0].data))
+    expect(byCard('c2')).toBe(templateAlibi(cards[1].data))
+    expect(byCard('c3')).toMatch(/harbor watch/)
     expect(deps.integrations.call).toHaveBeenCalledTimes(1)
   })
 })

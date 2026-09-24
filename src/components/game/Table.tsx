@@ -13,6 +13,7 @@ import { Button, ConfirmModal, Select, SelectContent, SelectItem, SelectTrigger,
 import { useAction } from '@/lib/actions'
 import type { CardKind } from '../../game/rules'
 import { SETTINGS } from '../../game/settings'
+import { AlibiEntry } from './AlibiEntry'
 import { CardView, FileLabel, InlineError, KIND_LABEL, KINDS } from './CardView'
 import { DetectiveGrid } from './DetectiveGrid'
 import { NarrationAudio } from './NarrationAudio'
@@ -312,16 +313,12 @@ function RoundLog({ view, round }: { view: GameView; round: Round }) {
         <ol className="space-y-2">
           {entries.map((entry) =>
             entry.type === 'alibi' ? (
-              <li
+              <AlibiEntry
                 key={`alibi-${entry.alibi.cardId}`}
-                data-testid="round-alibi"
-                data-card-id={entry.alibi.cardId}
-                className="rounded-sm border border-primary/60 bg-primary/5 px-3 py-2 text-sm"
-              >
-                <span className="font-mono text-[11px] uppercase tracking-widest text-primary">Alibi</span>{' '}
-                <span className="font-semibold">{name(entry.alibi.cardId)}</span> is cleared.
-                <p className="mt-1 border-l-2 border-primary pl-3 font-display italic leading-relaxed">{entry.alibi.text}</p>
-              </li>
+                cardId={entry.alibi.cardId}
+                cardName={name(entry.alibi.cardId)}
+                text={entry.alibi.text}
+              />
             ) : (
               <GuessEntry key={entry.guess.id} view={view} g={entry.guess} name={name} resultText={resultText} />
             ),

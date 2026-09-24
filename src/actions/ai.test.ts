@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { askForCase, askForJson, CASE_ATTEMPTS, type IntegrationCaller } from './ai'
+import { ALIBI_RETRY_OVER, askForAlibis, askForCase, askForJson, CASE_ATTEMPTS, type IntegrationCaller } from './ai'
+import { PRESET_CASE } from '../game/presetCase'
 import { SETTINGS } from '../game/settings'
 
 /** A fake text integration that replies with the scripted texts in order and records each request. */
@@ -113,5 +114,58 @@ describe('askForCase (R40: the case path)', () => {
     expect(requests).toHaveLength(1)
     expect(result).not.toBeNull()
     expect(JSON.stringify(result)).not.toMatch(/\bNate\b/)
+  })
+})
+
+describe('askForAlibis (R43: card by card)', () => {
+  const setting = SETTINGS[1]
+  const cards = PRESET_CASE.cards
+  /** A reply by number; the listed numbers get a graphic (invalid) alibi. */
+  const alibiReply = (badNumbers: number[]) =>
+    JSON.stringify({
+      alibis: cards.map((_, i) => ({
+        n: i + 1,
+        alibi: badNumbers.includes(i + 1) ? 'It was covered in blood.' : `Witnesses cleared card ${i + 1} all night.`,
+      })),
+    })
+
+  it('retries only when more than 3 are invalid', () => {
+    expect(ALIBI_RETRY_OVER).toBe(3)
+  })
+
+  it('2 invalid entries: 10 AI alibis and 2 templates (null), no retry', async () => {
+    const { tools, requests } = fakeModel([alibiReply([2, 7])])
+    const texts = await askForAlibis(tools, 'alibis', setting, cards, [])
+    expect(requests).toHaveLength(1)
+    expect(texts.filter((t) => t !== null)).toHaveLength(10)
+    expect(texts[1]).toBeNull()
+    expect(texts[6]).toBeNull()
+    expect(texts[0]).toBe('Witnesses cleared card 1 all night.')
+  })
+
+  it('5 invalid entries: one retry that feeds back the per-number errors, then keeps what is valid', async () => {
+    const { tools, requests } = fakeModel([alibiReply([1, 3, 5, 7, 9]), alibiReply([3])])
+    const texts = await askForAlibis(tools, 'alibis', setting, cards, [])
+    expect(requests).toHaveLength(2)
+    const feedback = requests[1].messages.at(-1)?.content ?? ''
+    for (const n of [1, 3, 5, 7, 9]) expect(feedback).toContain(`Alibi ${n} `)
+    expect(texts.filter((t) => t !== null)).toHaveLength(11)
+    expect(texts[2]).toBeNull()
+  })
+
+  it('never retries more than once, and still keeps the valid ones', async () => {
+    const { tools, requests } = fakeModel([alibiReply([1, 2, 3, 4, 5]), alibiReply([1, 2, 3, 4, 5, 6]), alibiReply([])])
+    const texts = await askForAlibis(tools, 'alibis', setting, cards, [])
+    expect(requests).toHaveLength(2)
+    expect(texts.filter((t) => t !== null)).toHaveLength(7)
+  })
+
+  it('a missing n keeps that card on its template', async () => {
+    const reply = JSON.parse(alibiReply([])) as { alibis: { n: number }[] }
+    reply.alibis = reply.alibis.filter((a) => a.n !== 4)
+    const { tools } = fakeModel([JSON.stringify(reply)])
+    const texts = await askForAlibis(tools, 'alibis', setting, cards, [])
+    expect(texts[3]).toBeNull()
+    expect(texts.filter((t) => t !== null)).toHaveLength(11)
   })
 })

@@ -7,8 +7,8 @@
  * only through the devSamples action, which refuses outside the dev server.
  */
 
-import { askForCase, askForJson, type IntegrationCaller } from '../actions/ai'
-import { alibiPrompt, templateAlibi, validateAlibis } from '../game/alibis'
+import { askForAlibis, askForCase, askForJson, type IntegrationCaller } from '../actions/ai'
+import { alibiOrder, templateAlibi } from '../game/alibis'
 import { buildQuestionPrompt, type AnsweredQuestion } from '../game/caseGen'
 import { PRESET_CASE, type PresetCase } from '../game/presetCase'
 import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet } from '../game/questions'
@@ -28,8 +28,8 @@ export interface SampleResult {
   openingNarration: string
   solution: { culprit: string; method: string; place: string }
   confession: string
-  /** R41: the 12 alibis, one per card, as the 'alibis' job would write them. */
-  alibis: { kind: string; card: string; text: string }[]
+  /** R41, R43: the 12 alibis, one per card, as the 'alibis' job would write them (byAi: false = the template). */
+  alibis: { kind: string; card: string; text: string; byAi: boolean }[]
 }
 
 /** Turn askForJson's report into a step outcome. */
@@ -77,22 +77,10 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
   const theCase: PresetCase =
     (await askForCase(tools, `sample case (${setting.id})`, setting, answers, [], guardNames, c.report)) ?? PRESET_CASE
 
-  // 3b. The alibis, as the 'alibis' job asks for them (fallback: the templates). The AI never sees the solution.
+  // 3b. The alibis, as the 'alibis' job asks for them, card by card (R43): null keeps the template.
   const a = tracker()
-  const alibiTexts =
-    (await askForJson<Record<string, string>>(
-      tools,
-      `sample alibis (${setting.id})`,
-      alibiPrompt(setting, theCase.cards),
-      (value) =>
-        validateAlibis(
-          value,
-          theCase.cards.map((card) => card.name),
-          guardNames,
-        ),
-      1500,
-      { report: a.report, playerNames: guardNames },
-    )) ?? Object.fromEntries(theCase.cards.map((card) => [card.name, templateAlibi(card)]))
+  const orderedCards = alibiOrder(theCase.cards)
+  const aiAlibis = await askForAlibis(tools, `sample alibis (${setting.id})`, setting, orderedCards, guardNames, a.report)
 
   // 4. A code-picked solution, then the confession as the reveal job asks for it (fallback: the template).
   const pick = (kind: string) => {
@@ -130,6 +118,11 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
     openingNarration: theCase.openingNarration,
     solution: { culprit: culprit.name, method: method.name, place: place.name },
     confession,
-    alibis: theCase.cards.map((card) => ({ kind: card.kind, card: card.name, text: alibiTexts[card.name] })),
+    alibis: orderedCards.map((card, i) => ({
+      kind: card.kind,
+      card: card.name,
+      text: aiAlibis[i] ?? templateAlibi(card),
+      byAi: aiAlibis[i] !== null,
+    })),
   }
 }

@@ -13,6 +13,7 @@
  */
 
 import type { ActionResult, ActionTools, CronContext } from 'deepspace/worker'
+import { alibiOrder, alibiPrompt, validateAlibis, type AlibiCardRef } from '../game/alibis'
 import { buildCasePrompt, substituteNames, validateCase, type AnsweredQuestion, type Prompt } from '../game/caseGen'
 import type { PresetCase } from '../game/presetCase'
 import type { Setting } from '../game/settings'
@@ -155,3 +156,47 @@ export function askForCase(
     { attempts: CASE_ATTEMPTS, playerNames, report },
   )
 }
+
+/** R43: the alibis get their one retry only when more than this many are invalid. */
+export const ALIBI_RETRY_OVER = 3
+
+/**
+ * The alibi path (R41-R43), shared by the 'alibis' job and the sample
+ * command: the numbered prompt, then card-by-card acceptance. A card's first
+ * valid alibi (from either call) is kept; the one retry happens only when
+ * more than ALIBI_RETRY_OVER are invalid, and shows the AI the per-number
+ * errors. Returns one entry per card, in alibiOrder(cards): the AI's text, or
+ * null where the card keeps its template.
+ */
+export async function askForAlibis(
+  tools: IntegrationCaller,
+  label: string,
+  setting: Setting,
+  cards: (AlibiCardRef & { description: string })[],
+  playerNames: string[],
+  report?: AskOptions['report'],
+): Promise<(string | null)[]> {
+  const ordered = alibiOrder(cards)
+  const kept: (string | null)[] = ordered.map(() => null)
+  await askForJson<true>(
+    tools,
+    label,
+    alibiPrompt(setting, ordered),
+    (value) => {
+      const checked = validateAlibis(value, ordered, playerNames)
+      if (!checked.ok) return checked
+      checked.results.forEach((r, i) => {
+        if (r.ok && kept[i] === null) kept[i] = r.text
+      })
+      const invalid = checked.results.filter((r) => !r.ok)
+      if (invalid.length > ALIBI_RETRY_OVER) return { ok: false, errors: invalid.flatMap((r) => (r.ok ? [] : r.errors)) }
+      return { ok: true, value: true }
+    },
+    1500,
+    { attempts: 2, playerNames, report },
+  )
+  const written = kept.filter((t) => t !== null).length
+  console.info(`[ai] ${label}: ${written} of ${ordered.length} alibis written by the AI; the rest keep their templates`)
+  return kept
+}
+
