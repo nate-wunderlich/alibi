@@ -175,6 +175,15 @@ R38. Structured prose (Nate: output must be good every time without
     the real pipeline and reports first-try pass rate, retries,
     fallbacks, and the assembled text, so quality is measured, not
     eyeballed.
+R39. Players' account names never reach the AI and never appear in
+    generated prose or narration (Nate, binding; supersedes the
+    name-crediting in R37 and R38). Prompts label choices by seat only
+    ("the host", "the guest"). Opening credits become creditHost /
+    creditGuest that must contain "the host" / "the guest" respectively,
+    and not the other seat. As a guard, every generated text (beats,
+    case, opening parts, confession) is rejected if it contains any
+    token of either player's display name (case-insensitive, whole word,
+    tokens of 3+ letters). playerNames() is no longer used for prompts.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
