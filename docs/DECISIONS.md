@@ -159,6 +159,22 @@ R37. Choice scenes and prose (Nate: "the best user experience"; refines
     with a small twist; 60-90 words. The AI still never sees the
     solution before the reveal (R4). Quality is judged by Nate on
     printed samples before deploy.
+R38. Structured prose (Nate: output must be good every time without
+    hand-tuning prompts; refines R37). Code guarantees structure; the AI
+    writes only the parts. (1) Opening: the case JSON returns
+    openingParts { scene, creditHost, creditGuest, hook } instead of
+    free prose. Code assembles scene + creditHost + creditGuest + "Four
+    suspects remain: A, B, C, and D." (exact card names from the case) +
+    hook. Validators: each credit contains its player's display name
+    exactly once and the other player's not at all; hook ends with "?";
+    each part within a word cap; tone guard on all. (2) Beats: must
+    address the player ("you" or "your") and must not contain two or
+    more of that question's answer options. (3) Retries feed the exact
+    validation errors back to the AI. (4) A committed sample command
+    (npm run samples, dev only, text AI only) runs N settings through
+    the real pipeline and reports first-try pass rate, retries,
+    fallbacks, and the assembled text, so quality is measured, not
+    eyeballed.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
