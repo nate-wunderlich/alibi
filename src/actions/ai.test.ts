@@ -188,3 +188,32 @@ describe('askForCase with avoid-names (R44)', () => {
   })
 })
 
+describe('askForCase with soft word caps (R45)', () => {
+  const setting = SETTINGS[1]
+  /** A case reply whose scene is `n` words long, optionally with extra text at the end. */
+  const longScene = (n: number, tail = '') => {
+    const reply = JSON.parse(caseReply()) as { openingParts: { scene: string } }
+    reply.openingParts.scene = `The fog rolled ${Array.from({ length: n - 3 }, (_, i) => `w${i}`).join(' ')}.${tail}`
+    return JSON.stringify(reply)
+  }
+
+  it('a 42-word scene fails on attempts 1-2 and passes on attempt 3', async () => {
+    const { tools, requests } = fakeModel([longScene(42), longScene(42), longScene(42)])
+    const result = await askForCase(tools, 'case', setting, [], [], [])
+    expect(requests).toHaveLength(3)
+    expect(result).not.toBeNull()
+    expect(requests[1].messages.at(-1)?.content).toMatch(/scene has 42 words/)
+  })
+
+  it('a graphic term still fails on attempt 3 (then the preset is used)', async () => {
+    const { tools, requests } = fakeModel([longScene(42, ' Blood.'), longScene(42, ' Blood.'), longScene(42, ' Blood.')])
+    expect(await askForCase(tools, 'case', setting, [], [], [])).toBeNull()
+    expect(requests).toHaveLength(3)
+  })
+
+  it('an opening over 750 characters still fails on attempt 3', async () => {
+    const { tools } = fakeModel([longScene(140), longScene(140), longScene(140)])
+    expect(await askForCase(tools, 'case', setting, [], [], [])).toBeNull()
+  })
+})
+

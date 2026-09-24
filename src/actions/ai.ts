@@ -134,7 +134,8 @@ export const CASE_ATTEMPTS = 3
 /**
  * The case path, shared by openRound and the sample command: the case
  * prompt (with R44's avoid-names and twist), name substitution, validation,
- * and up to CASE_ATTEMPTS calls; the last one accepts a repeated name.
+ * and up to CASE_ATTEMPTS calls; the last one accepts a repeated name and
+ * waives the opening word caps (R45; the 750-character opening cap stays).
  * Returns null if every call failed (the caller then uses the preset case).
  */
 export function askForCase(
@@ -162,7 +163,9 @@ export function askForCase(
         settingName: setting.name,
         playerNames,
         avoidNames,
+        // The final attempt accepts a repeated name (R44) and waives the opening word caps (R45).
         allowRepeatNames: attempt >= CASE_ATTEMPTS,
+        waiveWordCaps: attempt >= CASE_ATTEMPTS,
       })
       return checked.ok ? { ok: true, value: checked.case } : checked
     },

@@ -317,6 +317,8 @@ export function validateCase(
     avoidNames?: string[]
     /** R44 (2): the final attempt accepts a repeat rather than falling back. */
     allowRepeatNames?: boolean
+    /** R45: the final attempt waives the opening-part word caps (NARRATION_MAX still applies). */
+    waiveWordCaps?: boolean
   } = {},
 ): CaseValidation {
   if (typeof input !== 'object' || input === null) return { ok: false, errors: ['Expected a case object.'] }
@@ -330,7 +332,7 @@ export function validateCase(
   // R38: the opening comes as parts, checked here (names, caps, hook, tone guard).
   const parts = c.openingParts as OpeningParts | undefined
   if (typeof parts !== 'object' || parts === null) errors.push('Expected openingParts: { scene, creditHost, creditGuest, hook }.')
-  else errors.push(...validateOpeningParts(parts, options.playerNames))
+  else errors.push(...validateOpeningParts(parts, options.playerNames, { waiveWordCaps: options.waiveWordCaps }))
 
   const cards: PresetCase['cards'] = []
   for (const { key, kind } of GROUPS) {
@@ -444,13 +446,18 @@ export function assembleOpening(parts: OpeningParts, suspectNames: string[]): st
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length
 
 /**
- * Check the opening's parts (R38, R39). Each part is present, within its word
- * cap, and passes the tone guard; the hook ends with "?". creditHost contains
+ * Check the opening's parts (R38, R39, R45). Each part is present, within its
+ * word cap (waived on the final case attempt, R45), and passes the tone
+ * guard; the hook ends with "?". creditHost contains
  * "the host" and not "the guest"; creditGuest the reverse. With the players'
  * display names, no part may contain any of them. Returns the problems (empty
  * if fine), worded so a retry can fix them and never repeating a name.
  */
-export function validateOpeningParts(parts: OpeningParts, playerNames?: string[]): string[] {
+export function validateOpeningParts(
+  parts: OpeningParts,
+  playerNames?: string[],
+  options: { waiveWordCaps?: boolean } = {},
+): string[] {
   const errors: string[] = []
   const caps: [keyof OpeningParts, number][] = [
     ['scene', SCENE_MAX_WORDS],
@@ -464,7 +471,7 @@ export function validateOpeningParts(parts: OpeningParts, playerNames?: string[]
       errors.push(`openingParts.${key} is missing.`)
       continue
     }
-    if (words(value) > cap) errors.push(`openingParts.${key} has ${words(value)} words; the most is ${cap}.`)
+    if (!options.waiveWordCaps && words(value) > cap) errors.push(`openingParts.${key} has ${words(value)} words; the most is ${cap}.`)
     const term = findGraphicTerm(value)
     if (term) errors.push(`openingParts.${key} is too graphic ("${term}").`)
     if (playerNames && containsPlayerName(value, playerNames)) errors.push(playerNameError(`openingParts.${key}`))

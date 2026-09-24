@@ -559,3 +559,54 @@ describe('buildCasePrompt with variety (R44)', () => {
   })
 })
 
+describe('soft word caps on the final attempt (R45)', () => {
+  const words = (n: number, lead = 'The fog rolled') => `${lead} ${Array.from({ length: n - 3 }, (_, i) => `word${i}`).join(' ')}.`
+  const longScene = () => {
+    const c = validCase()
+    c.openingParts.scene = words(42)
+    return c
+  }
+  const longCredit = () => {
+    const c = validCase()
+    c.openingParts.creditHost = `Because the host ${Array.from({ length: 22 }, (_, i) => `chose${i}`).join(' ')}.`
+    return c
+  }
+
+  it('a 42-word scene fails with the caps and passes with them waived (opening under 750 characters)', () => {
+    expect(validateCase(longScene()).ok).toBe(false)
+    const waived = validateCase(longScene(), { waiveWordCaps: true })
+    expect(waived.ok).toBe(true)
+    if (waived.ok) expect(waived.case.openingNarration.length).toBeLessThanOrEqual(NARRATION_MAX)
+  })
+
+  it('credits over 22 words behave the same', () => {
+    expect(validateCase(longCredit()).ok).toBe(false)
+    expect(validateCase(longCredit(), { waiveWordCaps: true }).ok).toBe(true)
+  })
+
+  it('with the caps waived, a graphic term, a player name, or an opening over 750 characters still fails', () => {
+    const graphic = longScene()
+    graphic.openingParts.scene = `${words(40)} There was blood.`
+    expect(validateCase(graphic, { waiveWordCaps: true }).ok).toBe(false)
+
+    const named = longScene()
+    named.openingParts.scene = `${words(40)} Nathan watched.`
+    expect(validateCase(named, { waiveWordCaps: true, playerNames: ['Nathan Wunderlich'] }).ok).toBe(false)
+
+    const huge = longScene()
+    huge.openingParts.scene = words(140)
+    const result = validateCase(huge, { waiveWordCaps: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(new RegExp(`${NARRATION_MAX} characters`))
+  })
+
+  it('structure still applies with the caps waived: the hook ends with "?", each credit names its seat', () => {
+    const noQuestion = longScene()
+    noQuestion.openingParts.hook = 'Someone knows the truth.'
+    expect(validateCase(noQuestion, { waiveWordCaps: true }).ok).toBe(false)
+    const wrongSeat = longCredit()
+    wrongSeat.openingParts.creditGuest = 'Because the host found the door, the cellar matters.'
+    expect(validateCase(wrongSeat, { waiveWordCaps: true }).ok).toBe(false)
+  })
+})
+

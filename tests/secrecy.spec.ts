@@ -27,7 +27,8 @@ function expectOnlyOwnHand(hands: RecordRow[], viewer: string, viewerId: string,
 test('each player receives only their own hand, nobody receives the solution or the alibi texts, only the host sees the join code', async ({
   users,
 }) => {
-  test.setTimeout(240_000)
+  // R45: raised from 240s; the test accounts' long play history makes cases take more attempts (R44).
+  test.setTimeout(480_000)
   const [alice, bob] = await users(['Alice', 'Bob'])
   await Promise.all([alice.page.goto('/home'), bob.page.goto('/home')])
   for (const u of [alice, bob]) {
