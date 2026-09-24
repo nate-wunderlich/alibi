@@ -38,8 +38,8 @@ questions are answered on the previous round's reveal screen.
 2. Shuffle the remaining 9 cards.
 3. Deal 4 to each player. The 1 leftover card is placed FACE UP for both
    players to see.
-4. Round 1 starts with the host. The starting player alternates every
-   round after that.
+4. Round 1's starting player is chosen at random (a coin flip). The
+   starting player alternates every round after that (R41).
 
 Invariant: the envelope, both hands, and the face-up card together
 contain each of the 12 cards exactly once.
@@ -60,6 +60,17 @@ If you guess and do not accuse, the turn passes to your opponent.
 3. If your opponent holds none of the three, both players see
    "no match".
 4. Both players always see the guess itself.
+
+## Alibis (R41)
+1. After every second full turn pair (after turns 4, 8, 12, ...), one
+   alibi clears one card from the STARTER's hand (the player who moved
+   first this round) that is not already public.
+2. Both players see the cleared card and its alibi: a short line, in the
+   round's setting, saying why that card could not be the answer.
+3. Code chooses the card at random; the AI never chooses it and never
+   knows the envelope. A cleared card is never in the envelope.
+4. If every card in the starter's hand is already public, there is no
+   alibi.
 
 ## Accusing
 1. Name one suspect, one weapon, and one location as final.

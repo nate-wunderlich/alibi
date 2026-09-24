@@ -198,6 +198,21 @@ R40. Keep AI cases off the fallback (refines R39, R18 tone guard). (1)
     setting text is softened so it does not invite graphic detail; the
     concept is unchanged (architect wording edit, logged).
 
+R41. Alibis (Nate: the story must tie into the cards; measured D45-D47).
+    After every second full turn pair (after turns 4, 8, ...), one alibi
+    clears one card from the STARTER's hand that is not already public;
+    both players see it. Code chooses the card; the AI never chooses and
+    never knows the envelope. Simulated over the real rules (20,000
+    rounds per cell): starter win rate 69.9% -> 58.5%, CAREFUL beats
+    CASUAL 76.7% (baseline 77.7%), mean guesses 2.84 (baseline 2.97).
+    Source (ii) rejected (starter 90%); every-pair (B iii) rejected
+    (overcorrects to 39.7%). Round 1's starter is a coin flip (was
+    always the host: host won 54.4% of best-of-3 under R41 alone); later
+    rounds still alternate. Alibi text: a background job after the case
+    writes one short in-setting alibi per card (production only, like
+    R35/R36; name guard, tone guard); a code template is used if the AI
+    fails or under test. Alibi texts are server-only until drawn.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
