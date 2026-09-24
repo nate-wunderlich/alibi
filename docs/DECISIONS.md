@@ -126,6 +126,24 @@ R35. Suspect portraits run in ONE background job per round, off the
     buildCronContext is documented for cron only; its use from a job was
     proven by the D27 spike (enqueue to finish 2.4s, writes visible to
     normal action tools).
+R36. Narration (refines R11, R4). Rounds gain openingAudioUrl,
+    confession, and confessionAudioUrl. (1) Opening: openRound enqueues
+    an 'opening' job (production builds only, like R35) that voices
+    openingNarration with speech/text-to-speech (model tts-1, voice
+    fable, mp3), stores it with uploadMedia, and sets openingAudioUrl;
+    the table shows a Play button beside "Read the opening" once it
+    exists; no autoplay. (2) Confession: reveal() writes a code-built
+    template confession at once (culprit, method, place; free, always
+    present), then enqueues a 'confession' job (production only) that
+    asks the AI text integration for a short first-person confession
+    FROM the solution (the first time the AI sees it), validated (length
+    cap, tone guard, names the culprit; one retry, else keep the
+    template), voices it, and sets confession and confessionAudioUrl.
+    Both reveal screens try to autoplay the confession audio when it
+    arrives and fall back to a Play button if the browser blocks it.
+    Every job logs one line per paid call so the app keeps its own call
+    count (FRICTION 9). Jobs skip work already done, so a retry never
+    pays twice.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
