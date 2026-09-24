@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { askForJson, type IntegrationCaller } from './ai'
+import { askForCase, askForJson, CASE_ATTEMPTS, type IntegrationCaller } from './ai'
+import { SETTINGS } from '../game/settings'
 
 /** A fake text integration that replies with the scripted texts in order and records each request. */
 function fakeModel(replies: string[]) {
@@ -50,7 +51,67 @@ describe('askForJson retries (R38)', () => {
   it('reports how many calls it took, and null after two failures', async () => {
     const report = vi.fn()
     const { tools } = fakeModel(['{"n": 1}', '{"n": 3}'])
-    expect(await askForJson(tools, 'test', prompt, check, 100, report)).toBeNull()
+    expect(await askForJson(tools, 'test', prompt, check, 100, { report })).toBeNull()
     expect(report).toHaveBeenCalledWith({ attempts: 2, ok: false })
+  })
+})
+
+describe('attempts (R40)', () => {
+  it('defaults to 2 calls', async () => {
+    const { tools, requests } = fakeModel(['{"n": 1}', '{"n": 1}', '{"n": 2}'])
+    expect(await askForJson(tools, 'test', prompt, check, 100)).toBeNull()
+    expect(requests).toHaveLength(2)
+  })
+
+  it('makes up to `attempts` calls and reports the one that passed', async () => {
+    const report = vi.fn()
+    const { tools, requests } = fakeModel(['{"n": 1}', '{"n": 1}', '{"n": 2}'])
+    expect(await askForJson(tools, 'test', prompt, check, 100, { attempts: 3, report })).toBe(2)
+    expect(requests).toHaveLength(3)
+    expect(report).toHaveBeenCalledWith({ attempts: 3, ok: true })
+  })
+})
+
+/** A case reply as the AI would send it; `twist` changes one description. */
+function caseReply(description = 'A calm pilot.'): string {
+  const cards = (p: string) => [1, 2, 3, 4].map((n) => ({ name: `${p} ${n}`, description }))
+  return JSON.stringify({
+    title: 'The Airlock Affair',
+    victim: 'Chief Engineer Vale',
+    openingParts: {
+      scene: 'The alarm stopped. Nobody could say who opened the airlock.',
+      creditHost: 'The host heard the hull groan.',
+      creditGuest: 'The guest found the bay door sealed.',
+      hook: 'So who wanted the engineer silenced?',
+    },
+    suspects: cards('Suspect'),
+    weapons: cards('Method'),
+    locations: cards('Place'),
+  })
+}
+
+describe('askForCase (R40: the case path)', () => {
+  const setting = SETTINGS[1]
+
+  it('allows 3 attempts before the fallback', async () => {
+    expect(CASE_ATTEMPTS).toBe(3)
+    const { tools, requests } = fakeModel([caseReply('Covered in blood.'), caseReply('A gory past.'), caseReply()])
+    const result = await askForCase(tools, 'case', setting, [], [], [])
+    expect(result?.title).toBe('The Airlock Affair')
+    expect(requests).toHaveLength(3)
+  })
+
+  it('returns null after 3 failures', async () => {
+    const { tools, requests } = fakeModel([caseReply('blood'), caseReply('blood'), caseReply('blood'), caseReply()])
+    expect(await askForCase(tools, 'case', setting, [], [], [])).toBeNull()
+    expect(requests).toHaveLength(3)
+  })
+
+  it('substitutes a player name token in code without spending a retry', async () => {
+    const { tools, requests } = fakeModel([caseReply('Owes Nate money.')])
+    const result = await askForCase(tools, 'case', setting, [], [], ['Nate Wunderlich'])
+    expect(requests).toHaveLength(1)
+    expect(result).not.toBeNull()
+    expect(JSON.stringify(result)).not.toMatch(/\bNate\b/)
   })
 })

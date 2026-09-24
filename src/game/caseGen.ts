@@ -20,8 +20,8 @@ export const VICTIM_MAX = 120
 
 /**
  * The tone guard: text a party mystery should not contain. A case with any
- * of these, anywhere in its text, fails validation (then the AI retries once,
- * then the preset case is used). Matched case-insensitively at the start of
+ * of these, anywhere in its text, fails validation (then the AI retries, then
+ * the fallback is used); the prompts list them as words to avoid (R40). Matched case-insensitively at the start of
  * a word (see findGraphicTerm), so a stem like "decapitat" also catches
  * "decapitated" but a name like "Gregory" is not "gory".
  */
@@ -104,15 +104,96 @@ export function playerNameTokens(names: string[]): string[] {
   return [...new Set(names.flatMap((n) => n.split(/[^\p{L}]+/u)).filter((t) => t.length >= 3).map((t) => t.toLowerCase()))]
 }
 
+/** A whole-word, case-insensitive pattern for one name token; matches are then kept only if capitalized. */
+function tokenPattern(token: string): RegExp {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu')
+}
+
+const capitalized = (word: string) => word[0] !== word[0].toLowerCase()
+
+/** True if a text has a capitalized, whole-word match of one name token. */
+const hasToken = (text: string, token: string) => [...text.matchAll(tokenPattern(token))].some((m) => capitalized(m[0]))
+
 /**
- * R39 guard: true if a text contains any token of a player's display name,
- * as a whole word, ignoring case ("Nate" is not found in "Natalie").
+ * The name guard (R39, narrowed by R40): true if a text contains a
+ * capitalized token of a player's display name as a whole word ("Porter" is
+ * found; "the porter" and "Natalie" are not).
  */
 export function containsPlayerName(text: string, names: string[]): boolean {
-  return playerNameTokens(names).some((token) => {
-    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(text)
-  })
+  return playerNameTokens(names).some((token) => hasToken(text, token))
+}
+
+/** R40: stand-in names for a player-name collision. Single words, so none contains another's token. */
+export const NEUTRAL_NAMES = [
+  'Morgan',
+  'Quinn',
+  'Harlow',
+  'Ellis',
+  'Rowan',
+  'Blake',
+  'Hollis',
+  'Avery',
+  'Sloane',
+  'Marlow',
+  'Linden',
+  'Carver',
+  'Thorne',
+  'Wren',
+  'Ashby',
+  'Colby',
+  'Darrow',
+  'Fenwick',
+  'Greer',
+  'Kestrel',
+]
+
+/** Every string inside a value (strings, arrays, and plain objects). */
+function strings(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(strings)
+  if (typeof value === 'object' && value !== null) return Object.values(value).flatMap(strings)
+  return []
+}
+
+/** The same value with `edit` applied to every string inside it. */
+function mapStrings<T>(value: T, edit: (s: string) => string): T {
+  if (typeof value === 'string') return edit(value) as T
+  if (Array.isArray(value)) return value.map((v) => mapStrings(v, edit)) as T
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, edit)])) as T
+  }
+  return value
+}
+
+/**
+ * R40: replace every capitalized token of a player's name, in every string of
+ * a generated value (a case, a question set, a confession), with a neutral
+ * name: the same stand-in for the same token everywhere, never one that
+ * shares a token with a player, and never one the value already uses. Pure;
+ * returns the value itself if nothing matched. The caller then validates as
+ * usual, so no retry is spent and no name goes back to the AI.
+ */
+export function substituteNames<T>(value: T, names: string[]): T {
+  const tokens = playerNameTokens(names)
+  const all = strings(value)
+  const hits = tokens.filter((t) => all.some((s) => hasToken(s, t)))
+  if (hits.length === 0) return value
+  const free = NEUTRAL_NAMES.filter(
+    (n) => !tokens.includes(n.toLowerCase()) && !all.some((s) => tokenPattern(n.toLowerCase()).test(s)),
+  )
+  const standIn = new Map(hits.map((t, i) => [t, free[i] ?? 'Someone']))
+  return mapStrings(value, (s) =>
+    hits.reduce(
+      (text, t) =>
+        text.replace(tokenPattern(t), (m) => {
+          if (!capitalized(m)) return m
+          const name = standIn.get(t) ?? 'Someone'
+          return m.length > 1 && m === m.toUpperCase() ? name.toUpperCase() : name
+        }),
+      s,
+    ),
+  )
 }
 
 /**
@@ -319,6 +400,8 @@ function describeSetting(setting: Setting): string {
 
 const SHARED_RULES = [
   'Keep everything family-friendly: no gore, no cruelty, nothing a 12-year-old should not read.',
+  // R40: the tone guard's terms, named outright, so fewer replies fail on them.
+  `Words to avoid entirely (the game rejects any text that contains them or a word starting with them): ${GRAPHIC_TERMS.join(', ')}.`,
   'Invent everything. No real people, no brands, and nothing from famous books, films, or games.',
   'Reply with JSON only: no code fences, no text before or after it.',
 ].join('\n')

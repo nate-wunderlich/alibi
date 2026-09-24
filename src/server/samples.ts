@@ -7,8 +7,8 @@
  * only through the devSamples action, which refuses outside the dev server.
  */
 
-import { askForJson, type IntegrationCaller } from '../actions/ai'
-import { buildCasePrompt, buildQuestionPrompt, validateCase, type AnsweredQuestion } from '../game/caseGen'
+import { askForCase, askForJson, type IntegrationCaller } from '../actions/ai'
+import { buildQuestionPrompt, type AnsweredQuestion } from '../game/caseGen'
 import { PRESET_CASE, type PresetCase } from '../game/presetCase'
 import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet } from '../game/questions'
 import type { Setting } from '../game/settings'
@@ -44,7 +44,7 @@ function tracker() {
 
 /**
  * `guardNames` are FAKE display names (the script passes "Alex Rivera" and
- * "Sam Porter"): they only exercise the R39 guard, exactly as the game passes
+ * "Sam Porter"): they only exercise the R39 guard and R40 substitution, exactly as the game passes
  * real names to it. They never go into a prompt.
  */
 export async function runSample(tools: IntegrationCaller, setting: Setting, guardNames: string[]): Promise<SampleResult> {
@@ -60,7 +60,7 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
         return checked.ok ? { ok: true, value: splitForPlayers(checked.questions) } : checked
       },
       900,
-      q.report,
+      { report: q.report, playerNames: guardNames },
     )) ?? fallbackQuestions(Math.random)
 
   // 2. Fixed taps: the second option of every question, labelled by seat (R39).
@@ -72,17 +72,7 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
   // 3. The case, exactly as openRound asks for it (fallback: the preset case).
   const c = tracker()
   const theCase: PresetCase =
-    (await askForJson<PresetCase>(
-      tools,
-      `sample case (${setting.id})`,
-      buildCasePrompt(setting, answers, []),
-      (value) => {
-        const checked = validateCase(value, { settingName: setting.name, playerNames: guardNames })
-        return checked.ok ? { ok: true, value: checked.case } : checked
-      },
-      2000,
-      c.report,
-    )) ?? PRESET_CASE
+    (await askForCase(tools, `sample case (${setting.id})`, setting, answers, [], guardNames, c.report)) ?? PRESET_CASE
 
   // 4. A code-picked solution, then the confession as the reveal job asks for it (fallback: the template).
   const pick = (kind: string) => {
@@ -106,7 +96,7 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
       }),
       (value) => validateConfession(value, culprit.name, guardNames),
       500,
-      k.report,
+      { report: k.report, playerNames: guardNames },
     )) ?? templateConfession({ culprit: culprit.name, method: method.name, place: place.name })
 
   return {

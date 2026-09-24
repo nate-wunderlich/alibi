@@ -8,6 +8,8 @@ import {
   findGraphicTerm,
   GRAPHIC_TERMS,
   NARRATION_MAX,
+  playerNameTokens,
+  substituteNames,
   validateCase,
   validateOpeningParts,
   type GeneratedCase,
@@ -297,6 +299,89 @@ describe('the player-name guard (R39)', () => {
     const c = validCase()
     c.suspects[0] = { ...c.suspects[0], name: 'Natalie Crane' }
     expect(validateCase(c, { playerNames: names }).ok).toBe(true)
+  })
+})
+
+describe('substituteNames (R40: fix name collisions in code, no retry)', () => {
+  const names = ['Nate Wunderlich', 'Sam Porter']
+
+  it('replaces "Nate" in a card name, its description, and the opening, with the same neutral name everywhere', () => {
+    const c = validCase()
+    c.suspects[0] = { name: 'Captain Nate', description: "Nate's debts to the engineer were growing." }
+    c.openingParts.scene = 'Nate paced the bridge while the alarm rang.'
+    const out = substituteNames(c, names)
+    const text = JSON.stringify(out)
+    expect(text).not.toMatch(/\bNate\b/)
+    const replacement = out.suspects[0].name.replace('Captain ', '')
+    expect(replacement).not.toBe('Nate')
+    expect(out.suspects[0].description).toBe(`${replacement}'s debts to the engineer were growing.`)
+    expect(out.openingParts.scene).toBe(`${replacement} paced the bridge while the alarm rang.`)
+    expect(validateCase(out, { playerNames: names }).ok).toBe(true)
+  })
+
+  it('leaves "the porter" alone but replaces "Porter"', () => {
+    const c = validCase()
+    c.suspects[1] = { name: 'Old Porter', description: 'He tipped the porter to look away.' }
+    const out = substituteNames(c, names)
+    expect(out.suspects[1].name).not.toBe('Old Porter')
+    expect(out.suspects[1].name).toMatch(/^Old \p{Lu}\p{L}+$/u)
+    expect(out.suspects[1].description).toBe('He tipped the porter to look away.')
+    expect(validateCase(out, { playerNames: names }).ok).toBe(true)
+  })
+
+  it('never introduces a player token, even when players share names with the neutral list', () => {
+    const c = validCase()
+    c.suspects[0] = { name: 'Captain Nate', description: 'Owes Wunderlich money.' }
+    // Players whose names could be neutral picks: whatever replaces Nate must be neither.
+    const tricky = ['Nate Wunderlich', 'Morgan Quinn', 'Ellis Harlow', 'Rowan Blake', 'Avery Sloane']
+    const out = substituteNames(c, tricky)
+    const tokens = playerNameTokens(tricky)
+    for (const word of JSON.stringify(out).split(/[^\p{L}]+/u)) {
+      if (/^\p{Lu}/u.test(word)) expect(tokens, word).not.toContain(word.toLowerCase())
+    }
+    expect(validateCase(out, { playerNames: tricky }).ok).toBe(true)
+  })
+
+  it('does not pick a neutral name the case already uses', () => {
+    const c = validCase()
+    c.suspects[0] = { name: 'Captain Nate', description: 'A pilot.' }
+    const first = substituteNames(c, names).suspects[0].name
+    const c2 = validCase()
+    c2.suspects[0] = { name: 'Captain Nate', description: 'A pilot.' }
+    c2.suspects[1] = { name: first, description: 'Already here.' }
+    expect(substituteNames(c2, names).suspects[0].name).not.toBe(first)
+  })
+
+  it('leaves text with no capitalized player token unchanged', () => {
+    const c = validCase()
+    expect(substituteNames(c, names)).toEqual(c)
+  })
+
+  it('works on question sets and plain strings too', () => {
+    const qs = [{ beat: 'You watch Sam pace the deck.', text: 'Who is Sam?', answers: ['Sam', 'A porter', 'B', 'C'] }]
+    const out = substituteNames(qs, names)
+    expect(JSON.stringify(out)).not.toMatch(/\bSam\b/)
+    expect(out[0].answers[1]).toBe('A porter')
+    expect(substituteNames('I am Captain Nate.', names)).not.toMatch(/\bNate\b/)
+  })
+})
+
+describe('the name guard matches only capitalized tokens (R40)', () => {
+  it('flags "Porter" but not "the porter"', () => {
+    const c = validCase()
+    c.suspects[0] = { name: 'Dock Hand', description: 'He paid the porter to look away.' }
+    expect(validateCase(c, { playerNames: ['Sam Porter'] }).ok).toBe(true)
+    c.suspects[0] = { name: 'Dock Hand', description: 'He paid Porter to look away.' }
+    expect(validateCase(c, { playerNames: ['Sam Porter'] }).ok).toBe(false)
+  })
+})
+
+describe('prompts list the tone-guard terms to avoid (R40)', () => {
+  it('the case and question prompts name every GRAPHIC_TERMS entry in an avoid list', () => {
+    for (const prompt of [buildQuestionPrompt(setting), buildCasePrompt(setting, [], [])]) {
+      const line = (prompt.system + '\n' + prompt.user).split('\n').find((l) => /avoid/i.test(l)) ?? ''
+      for (const term of GRAPHIC_TERMS) expect(line, term).toContain(term)
+    }
   })
 })
 

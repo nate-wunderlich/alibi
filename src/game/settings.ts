@@ -103,7 +103,7 @@ export const SETTINGS: readonly Setting[] = [
   {
     id: "in-the-tall-grass",
     name: "In the Tall Grass",
-    hook: "At a luxury wildlife reserve full of exotic animals, a tiger's enclosure is found open overnight. By morning one of the park's guides lies dead deep in the tall grass beyond the fence, in what looks like an animal attack. The grass hides any tracks, the gate latch was opened from the outside, and the guide had enemies among his coworkers. Was it the tiger, or someone who wanted it to look like the tiger?",
+    hook: "At a luxury wildlife reserve full of exotic animals, a tiger's enclosure is found open overnight. By morning one of the park's guides is found dead deep in the tall grass beyond the fence, and everyone is quick to blame the missing tiger. The grass hides any tracks, the gate latch was opened from the outside, and the guide had enemies among his coworkers. Was it really the tiger, or someone who wanted the tiger to take the blame?",
     whyNoOneCanLeave: "the reserve is locked down while the tiger is still loose somewhere in the grass.",
     mood: "wild, suspenseful, exotic.",
   },

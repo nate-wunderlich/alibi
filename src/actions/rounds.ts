@@ -20,7 +20,7 @@ import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet
 import { deal, starterForRound, type Card, type Player } from '../game/rules'
 import { pickSetting, SETTINGS } from '../game/settings'
 import { portraitsEnabled } from '../server/portraits'
-import { askForJson } from './ai'
+import { askForCase, askForJson } from './ai'
 import { loadRound, must, refuse, userInSeat, type Game } from './helpers'
 
 /** A question as stored for a player: the id is what submitAnswers checks. */
@@ -93,6 +93,7 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
       return checked.ok ? { ok: true, value: splitForPlayers(checked.questions) } : checked
     },
     900,
+    { playerNames: questionGuard },
   )
   const set = fromAi ?? fallbackQuestions(Math.random)
 
@@ -138,7 +139,7 @@ export async function guardNames(tools: ActionTools, game: Game): Promise<string
   return rows.records.map((r) => String(r.data.displayName ?? '').trim()).filter((n) => n !== '')
 }
 
-/** Ask the AI for the case; fall back to the preset case after one retry. */
+/** Ask the AI for the case; fall back to the preset case after CASE_ATTEMPTS calls (R40). */
 async function writeCase(
   tools: ActionTools,
   game: Game,
@@ -153,16 +154,7 @@ async function writeCase(
   const earlierTitles = rounds.records
     .filter((r) => Number(r.data.number) < number && String(r.data.caseTitle) !== '')
     .map((r) => String(r.data.caseTitle))
-  const generated = await askForJson<PresetCase>(
-    tools,
-    `case for round ${number} (${setting.id})`,
-    buildCasePrompt(setting, answers, earlierTitles),
-    (value) => {
-      const checked = validateCase(value, { settingName: setting.name, playerNames })
-      return checked.ok ? { ok: true, value: checked.case } : checked
-    },
-    2000,
-  )
+  const generated = await askForCase(tools, `case for round ${number} (${setting.id})`, setting, answers, earlierTitles, playerNames)
   if (generated) {
     // Public data only (the cast, not the solution), for tracing what the AI wrote.
     console.info(`[ai] case for round ${number}: "${generated.title}" | ${generated.cards.map((c) => c.name).join(' | ')}`)

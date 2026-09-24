@@ -172,7 +172,7 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
     const answers: AnsweredQuestion[] = Object.entries(revealed).flatMap(([userId, list]) =>
       list.map((a) => ({ seat: userId === hostId ? ('host' as const) : ('guest' as const), question: a.question, answer: a.answer })),
     )
-    // The players' display names are loaded only for the guard; they never go into the prompt (R39).
+    // The players' display names are loaded only for the guard and substitution; they never go into the prompt (R39, R40).
     const players = (await deps.records.query('players', { where: { gameId: round.gameId ?? '' }, limit: 10 })) as Row<{
       displayName?: string
     }>[]
@@ -191,6 +191,7 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
       }),
       (value) => validateConfession(value, culprit.name, playerNames),
       500,
+      { playerNames },
     )
     if (written) {
       confession = written

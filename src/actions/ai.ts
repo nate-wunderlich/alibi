@@ -4,15 +4,18 @@
  * endpoint's default model is off standard pricing).
  *
  * askForJson sends a prompt, reads the reply as JSON (code fences stripped),
- * and checks it with a validator. If the reply is unusable it retries once,
- * then returns null so the caller uses its fallback. It never throws.
+ * and checks it with a validator. If the reply is unusable it retries (2
+ * calls in all by default; the case gets 3, R40), then returns null so the
+ * caller uses its fallback. It never throws.
  *
  * Nothing here ever sends the solution: callers build prompts from
  * src/game/caseGen.ts, which only knows the setting and the answers (R4).
  */
 
 import type { ActionResult, ActionTools, CronContext } from 'deepspace/worker'
-import type { Prompt } from '../game/caseGen'
+import { buildCasePrompt, substituteNames, validateCase, type AnsweredQuestion, type Prompt } from '../game/caseGen'
+import type { PresetCase } from '../game/presetCase'
+import type { Setting } from '../game/settings'
 
 export const AI_MODEL = 'claude-haiku-4-5'
 
@@ -53,21 +56,31 @@ export function integrationFromCron(integrations: CronContext['integrations']): 
 
 type Message = { role: 'user' | 'assistant'; content: string }
 
-/**
- * `report`, if given, is told how many calls were made and whether one passed
- * (the sample command uses it to measure first-try pass rates; R38).
- */
+export interface AskOptions {
+  /** Told how many calls were made and whether one passed (the sample command's pass rates; R38). */
+  report?: (r: { attempts: number; ok: boolean }) => void
+  /** The most calls to make before giving up (default 2; the case gets CASE_ATTEMPTS, R40). */
+  attempts?: number
+  /**
+   * The players' display names (R40). A capitalized token of one in the reply
+   * is replaced in code with a neutral name before the check, so a collision
+   * costs no retry, and a retry never shows the AI a player's name.
+   */
+  playerNames?: string[]
+}
+
 export async function askForJson<T>(
   tools: IntegrationCaller,
   label: string,
   prompt: Prompt,
   check: Check<T>,
   maxTokens: number,
-  report?: (r: { attempts: number; ok: boolean }) => void,
+  options: AskOptions = {},
 ): Promise<T | null> {
+  const { report, attempts = 2, playerNames = [] } = options
   // R38: a retry shows the AI its previous reply and exactly what was wrong with it.
   let messages: Message[] = [{ role: 'user', content: prompt.user }]
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     console.info(`[ai] ${label}: call ${attempt}`)
     const result = await tools.integration('anthropic/chat-completion', {
       model: AI_MODEL,
@@ -80,9 +93,10 @@ export async function askForJson<T>(
       continue
     }
     const reply = replyText(result.data)
-    const retryWith = (feedback: string): Message[] => [
+    // The reply shown back on a retry has any player-name token already replaced (R39, R40).
+    const retryWith = (feedback: string, shown = substituteNames(reply, playerNames)): Message[] => [
       { role: 'user', content: prompt.user },
-      { role: 'assistant', content: reply },
+      { role: 'assistant', content: shown },
       { role: 'user', content: feedback },
     ]
     let parsed: unknown
@@ -93,7 +107,9 @@ export async function askForJson<T>(
       messages = retryWith('Your reply was not valid JSON. Reply again with the JSON only: no code fences, no other text.')
       continue
     }
-    const checked = check(parsed)
+    const substituted = substituteNames(parsed, playerNames)
+    if (substituted !== parsed) console.info(`[ai] ${label}: call ${attempt}: replaced a player-name collision in code (R40)`)
+    const checked = check(substituted)
     if (checked.ok) {
       console.info(`[ai] ${label}: ok on call ${attempt}`)
       report?.({ attempts: attempt, ok: true })
@@ -102,9 +118,40 @@ export async function askForJson<T>(
     console.warn(`[ai] ${label}: call ${attempt} failed validation: ${checked.errors.slice(0, 3).join(' ')}`)
     messages = retryWith(
       ['Your reply did not pass these checks:', ...checked.errors.map((e) => `- ${e}`), 'Reply again with the corrected JSON only.'].join('\n'),
+      substituted === parsed ? reply : JSON.stringify(substituted),
     )
   }
   console.warn(`[ai] ${label}: using the fallback`)
-  report?.({ attempts: 2, ok: false })
+  report?.({ attempts, ok: false })
   return null
+}
+
+/** R40: the case gets 3 calls before the preset fallback. */
+export const CASE_ATTEMPTS = 3
+
+/**
+ * The case path, shared by openRound and the sample command: the case
+ * prompt, name substitution, validation, and up to CASE_ATTEMPTS calls.
+ * Returns null if every call failed (the caller then uses the preset case).
+ */
+export function askForCase(
+  tools: IntegrationCaller,
+  label: string,
+  setting: Setting,
+  answers: AnsweredQuestion[],
+  earlierTitles: string[],
+  playerNames: string[],
+  report?: AskOptions['report'],
+): Promise<PresetCase | null> {
+  return askForJson<PresetCase>(
+    tools,
+    label,
+    buildCasePrompt(setting, answers, earlierTitles),
+    (value) => {
+      const checked = validateCase(value, { settingName: setting.name, playerNames })
+      return checked.ok ? { ok: true, value: checked.case } : checked
+    },
+    2000,
+    { attempts: CASE_ATTEMPTS, playerNames, report },
+  )
 }
