@@ -144,6 +144,21 @@ R36. Narration (refines R11, R4). Rounds gain openingAudioUrl,
     Every job logs one line per paid call so the app keeps its own call
     count (FRICTION 9). Jobs skip work already done, so a retry never
     pays twice.
+R37. Choice scenes and prose (Nate: "the best user experience"; refines
+    R21, R25, R36). (1) Each AI question now comes with a scene beat:
+    one or two cinematic sentences, second person, present tense, at
+    most 30 words, that set up the choice ("The storm hits. Someone
+    pounds on the lighthouse door."), shown above the question; the
+    generic fallback bank gets beats too. (2) The opening narration
+    credits each player's choices by display name ("Because Nathan let
+    the merchant captain in..."), names all 4 suspects, and ends on a
+    hook question; about 70-90 words. This supersedes R21's "answers
+    hidden until the reveal" for the narration only: the answers records
+    stay owner-only. (3) The confession is in the culprit's voice, gives
+    the motive, pays off at least one choice from each player, and ends
+    with a small twist; 60-90 words. The AI still never sees the
+    solution before the reveal (R4). Quality is judged by Nate on
+    printed samples before deploy.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
