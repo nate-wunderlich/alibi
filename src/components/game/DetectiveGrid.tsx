@@ -4,7 +4,8 @@
  * or maybe.
  *
  * What the player provably knows is filled in and locked: their own hand,
- * the face-up card, and every card shown to them. Every other cell cycles on
+ * the face-up card, every card shown to them, and every card an alibi
+ * cleared (R41). Every other cell cycles on
  * tap (blank -> has -> doesn't -> maybe -> blank) and is saved to the
  * player's own `notes` row, which only they can read (R29).
  */
@@ -13,7 +14,7 @@ import { useRef, useState } from 'react'
 import { useMutations, useQuery } from 'deepspace'
 import { cn } from '@/lib/utils'
 import { FileLabel, KIND_LABEL, KINDS } from './CardView'
-import type { GameView, Round } from './useGameData'
+import { alibisOf, type GameView, type Round } from './useGameData'
 
 type Column = 'me' | 'opponent' | 'envelope'
 type Mark = '' | 'has' | 'no' | 'maybe'
@@ -36,12 +37,20 @@ function nextMark(mark: Mark): Mark {
  * What the player provably knows about a card, as locked cells:
  * - in my hand: I have it, so my opponent doesn't and it is not in the envelope;
  * - face up: nobody has it and it is not in the envelope;
- * - shown to me: my opponent has it, so I don't and it is not in the envelope.
+ * - shown to me: my opponent has it, so I don't and it is not in the envelope;
+ * - cleared by an alibi (R41): it came from the starter's hand, so it is not
+ *   in the envelope, and if it is not mine, my opponent (the starter) has it.
  */
-function provable(cardId: string, view: GameView, round: Round, shownIds: Set<string>): Partial<Record<Column, Mark>> {
+function provable(
+  cardId: string,
+  view: GameView,
+  round: Round,
+  shownIds: Set<string>,
+  clearedIds: Set<string>,
+): Partial<Record<Column, Mark>> {
   if (view.myHand.includes(cardId)) return { me: 'has', opponent: 'no', envelope: 'no' }
   if (cardId === round.faceUpCardId) return { me: 'no', opponent: 'no', envelope: 'no' }
-  if (shownIds.has(cardId)) return { me: 'no', opponent: 'has', envelope: 'no' }
+  if (shownIds.has(cardId) || clearedIds.has(cardId)) return { me: 'no', opponent: 'has', envelope: 'no' }
   return {}
 }
 
@@ -56,6 +65,7 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
   const marks = local ?? saved
   const creating = useRef<Promise<string> | null>(null)
   const shownIds = new Set(view.shownToMe.values())
+  const clearedIds = new Set(alibisOf(round).map((a) => a.cardId))
 
   /** Save the whole grid: update my row, or create it the first time (only once). */
   async function save(next: Marks) {
@@ -99,7 +109,7 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
             {view.cards
               .filter((c) => c.kind === kind)
               .map((card) => {
-                const known = provable(card.id, view, round, shownIds)
+                const known = provable(card.id, view, round, shownIds, clearedIds)
                 const faceUp = card.id === round.faceUpCardId
                 return (
                   <tr

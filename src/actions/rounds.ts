@@ -14,7 +14,8 @@
 
 import { enqueueJob, type ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
-import { buildCasePrompt, buildQuestionPrompt, validateCase, type AnsweredQuestion } from '../game/caseGen'
+import { templateAlibi } from '../game/alibis'
+import { buildQuestionPrompt, type AnsweredQuestion } from '../game/caseGen'
 import { PRESET_CASE, type PresetCase } from '../game/presetCase'
 import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet } from '../game/questions'
 import { deal, starterForRound, type Card, type Player } from '../game/rules'
@@ -78,6 +79,8 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
       openingAudioUrl: '',
       confession: '',
       confessionAudioUrl: '',
+      turnsPlayed: 0,
+      revealedAlibis: '[]',
     }),
     `Preparing round ${number}`,
   )
@@ -167,8 +170,8 @@ async function writeCase(
  * lay out the cards, deal, and start play. While the AI writes, the round is
  * 'generating' so both screens can say so; if anything fails, it goes back
  * to 'answering' so the host can try again. Once the round is playing, the
- * portraits and opening-narration jobs are queued (production builds only;
- * R35, R36).
+ * portraits, opening-narration, and alibi jobs are queued (production builds
+ * only; R35, R36, R41).
  */
 export async function openRound(tools: ActionTools, env: Env, game: Game, roundId: string): Promise<void> {
   const round = await loadRound(tools, roundId)
@@ -193,17 +196,19 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
   if (portraitsEnabled()) {
     await queueMediaJob(env, 'portraits', game, roundId)
     await queueMediaJob(env, 'opening', game, roundId)
+    await queueMediaJob(env, 'alibis', game, roundId)
   }
 }
 
 /**
- * Queue a media job for a round (R35 portraits, R36 opening and confession),
+ * Queue a media job for a round (R35 portraits, R36 opening and confession,
+ * R41 alibi texts),
  * acting as the host. Play never waits for media, so a failure here is logged
  * and otherwise ignored. Callers check portraitsEnabled() (production only).
  */
 export async function queueMediaJob(
   env: Env,
-  type: 'portraits' | 'opening' | 'confession',
+  type: 'portraits' | 'opening' | 'confession' | 'alibis',
   game: Game,
   roundId: string,
 ): Promise<void> {
@@ -220,6 +225,7 @@ export async function queueMediaJob(
 /** Write the case's 12 cards, deal them with the rules module, and start play. */
 async function layOutAndDeal(tools: ActionTools, game: Game, roundId: string, number: number, theCase: PresetCase) {
   // 1. The 12 cards. Each card's record id is the id the rules deal with.
+  //    R41: each gets a template alibi at once (server-only; the 'alibis' job may improve it).
   const deck: Card[] = []
   for (const c of theCase.cards) {
     const { recordId } = must(
@@ -227,6 +233,7 @@ async function layOutAndDeal(tools: ActionTools, game: Game, roundId: string, nu
       'Creating a card',
     )
     deck.push({ id: recordId, kind: c.kind })
+    must(await tools.create('alibiTexts', { roundId, cardId: recordId, text: templateAlibi(c) }), 'Writing an alibi')
   }
 
   // 2. Deal: envelope, two hands of 4, one face up.
@@ -243,9 +250,8 @@ async function layOutAndDeal(tools: ActionTools, game: Game, roundId: string, nu
   }
   must(await tools.create('solution', { roundId, ...dealt.envelope }), 'Sealing the envelope')
 
-  // 3. Open the round: the starter alternates by round number. R41's random
-  // first starter (firstStarter) is not wired in yet, so round 1 is still the host's.
-  const starter = starterForRound(number, 'host')
+  // 3. Open the round: round 1's starter is the game's coin flip; later rounds alternate (R41).
+  const starter = starterForRound(number, game.firstStarter)
   must(
     await tools.update('rounds', roundId, {
       status: 'playing',

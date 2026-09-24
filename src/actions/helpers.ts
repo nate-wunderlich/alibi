@@ -60,6 +60,8 @@ export interface Game {
   currentRound: number
   status: string
   seriesWinner: string
+  /** R41: who starts round 1. Games created before R41 have none, and keep the host. */
+  firstStarter: Player
 }
 
 /** Load a game by id, or refuse if there is none. */
@@ -77,6 +79,7 @@ export async function loadGame(tools: ActionTools, gameId: string): Promise<Game
     currentRound: Number(d.currentRound ?? 0),
     status: String(d.status ?? ''),
     seriesWinner: String(d.seriesWinner ?? ''),
+    firstStarter: d.firstStarter === 'guest' ? 'guest' : 'host',
   }
 }
 
@@ -109,11 +112,24 @@ export interface Round {
   number: number
   status: string
   settingId: string
+  /** The seat that started this round ('' until it opens). */
+  starter: Player | ''
+  faceUpCardId: string
   turnUserId: string
   guessedThisTurn: boolean
   pendingGuessId: string
   hostAnswered: boolean
   guestAnswered: boolean
+  /** R41: completed turns, and the alibis drawn so far. */
+  turnsPlayed: number
+  revealedAlibis: RevealedAlibi[]
+}
+
+/** R41: an alibi drawn during play, public on the round. */
+export interface RevealedAlibi {
+  cardId: string
+  text: string
+  afterTurn: number
 }
 
 /** Load a round by id, or refuse if there is none. */
@@ -127,11 +143,15 @@ export async function loadRound(tools: ActionTools, roundId: string): Promise<Ro
     number: Number(d.number ?? 0),
     status: String(d.status ?? ''),
     settingId: String(d.settingId ?? ''),
+    starter: d.starter === 'host' || d.starter === 'guest' ? d.starter : '',
+    faceUpCardId: String(d.faceUpCardId ?? ''),
     turnUserId: String(d.turnUserId ?? ''),
     guessedThisTurn: Number(d.guessedThisTurn ?? 0) === 1,
     pendingGuessId: String(d.pendingGuessId ?? ''),
     hostAnswered: Number(d.hostAnswered ?? 0) === 1,
     guestAnswered: Number(d.guestAnswered ?? 0) === 1,
+    turnsPlayed: Number(d.turnsPlayed ?? 0),
+    revealedAlibis: d.revealedAlibis ? (JSON.parse(String(d.revealedAlibis)) as RevealedAlibi[]) : [],
   }
 }
 

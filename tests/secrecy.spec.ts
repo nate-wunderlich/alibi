@@ -1,5 +1,5 @@
 /**
- * Secrecy (docs/SPEC.md, Tests; R5, R29, R32): a browser only ever receives
+ * Secrecy (docs/SPEC.md, Tests; R5, R29, R32, R41): a browser only ever receives
  * the records its user may see. Written before the permissions existed, so it
  * failed first (D10) and passes once the schemas are locked (D11).
  *
@@ -24,7 +24,7 @@ function expectOnlyOwnHand(hands: RecordRow[], viewer: string, viewerId: string,
   expect.soft(foreign, `${viewer} should receive no hands row belonging to the other player`).toHaveLength(0)
 }
 
-test('each player receives only their own hand, nobody receives the solution, only the host sees the join code', async ({
+test('each player receives only their own hand, nobody receives the solution or the alibi texts, only the host sees the join code', async ({
   users,
 }) => {
   test.setTimeout(240_000)
@@ -97,6 +97,19 @@ test('each player receives only their own hand, nobody receives the solution, on
   const asAlice = await visibleRecords(alice.page, roundId, gameId)
   expectOnlyOwnHand(asAlice.hands.rows, 'Alice', aliceId, bobId)
   expect.soft(asAlice.solution.rows, 'Alice should receive 0 solution rows').toHaveLength(0)
+
+  // R41: the 12 alibi texts are written when the round opens, and no client reads them before the
+  // reveal (only drawn alibis reach the round, as revealedAlibis). The collection must answer the
+  // way the closed solution collection does, so a misspelt name cannot pass by erroring.
+  for (const [viewer, seen] of [
+    ['Alice', asAlice],
+    ['Bob', asBob],
+  ] as const) {
+    expect.soft(seen.alibiTexts.rows, `${viewer} should receive 0 alibiTexts rows`).toHaveLength(0)
+    expect.soft(seen.alibiTexts.status, `alibiTexts answers ${viewer} like the closed solution collection`).toBe(
+      seen.solution.status,
+    )
+  }
   for (const kind of ['questions', 'answers'] as const) {
     const rows = asAlice[kind].rows
     expect.soft(rows.filter((r) => r.data.userId === bobId), `Alice should receive 0 of Bob's ${kind} rows`).toHaveLength(0)

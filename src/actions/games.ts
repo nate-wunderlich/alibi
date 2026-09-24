@@ -7,6 +7,7 @@
 
 import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
+import { firstStarter } from '../game/rules'
 import {
   action,
   loadGame,
@@ -82,6 +83,7 @@ const createGame = action(async ({ userId, params, tools }) => {
       currentRound: 0,
       status: 'lobby',
       seriesWinner: '',
+      firstStarter: '',
     }),
     'Creating the game',
   )
@@ -183,7 +185,11 @@ const submitAnswers = action(async ({ userId, params, tools }) => {
   return { roundId }
 })
 
-/** startSeries({ gameId }): the host starts round 1 once a guest has joined and both have answered. */
+/**
+ * startSeries({ gameId }): the host starts round 1 once a guest has joined and
+ * both have answered. R41: who starts round 1 is a coin flip, stored on the
+ * game; later rounds alternate from it.
+ */
 const startSeries = action(async ({ userId, params, tools, env }) => {
   const game = await loadGame(tools, textParam(params, 'gameId'))
   if (game.host !== userId) refuse('Only the host can start the series.')
@@ -192,7 +198,9 @@ const startSeries = action(async ({ userId, params, tools, env }) => {
 
   const round1 = await findRound(tools, game.id, 1)
   if (!round1) throw new Error('Round 1 was never prepared.')
-  await openRound(tools, env, game, round1.recordId)
+  const first = firstStarter(Math.random)
+  must(await tools.update('games', game.id, { firstStarter: first }), 'Choosing who starts')
+  await openRound(tools, env, { ...game, firstStarter: first }, round1.recordId)
   return { gameId: game.id, roundId: round1.recordId }
 })
 

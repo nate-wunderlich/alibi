@@ -41,6 +41,7 @@
 
 import { buildCronContext, type Job, type JobContext } from 'deepspace/worker'
 import type { Env } from '../worker'
+import { runAlibis } from './server/alibis'
 import { uploadMedia } from './server/media'
 import { runConfession, runOpening } from './server/narration'
 import { runPortraits, type PortraitDeps } from './server/portraits'
@@ -69,6 +70,8 @@ export async function runJob(job: Job, _ctx: JobContext, env: Env): Promise<unkn
       return runOpening(mediaDeps(env, hostId), { roundId, hostId })
     case 'confession': // R36 (2)
       return runConfession(mediaDeps(env, hostId), { roundId, hostId })
+    case 'alibis': // R41
+      return runAlibis(mediaDeps(env, hostId), { roundId })
     default:
       throw new Error(`Unknown job type: ${job.type}`)
   }

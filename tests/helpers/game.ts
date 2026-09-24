@@ -70,6 +70,7 @@ export const PROBE_SECTIONS = [
   'notes',
   'questions',
   'answers',
+  'alibiTexts',
 ] as const
 export type ProbeSection = (typeof PROBE_SECTIONS)[number]
 

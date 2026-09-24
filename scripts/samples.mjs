@@ -6,8 +6,9 @@
  * (default 3, picked at random without repeats) or the named setting ids
  * through the real text pipeline on the LOCAL dev server (the devSamples
  * action, which refuses in a production build), then prints the scene beats,
- * the assembled opening, the confession, and first-try / retry / fallback per
- * step, with totals. Text AI only: about 3 calls per setting.
+ * the assembled opening, the 12 alibis (R41), the confession, and first-try /
+ * retry / fallback per step, with totals. Text AI only: about 4 calls per
+ * setting.
  *
  * R39: player names never reach the AI. Two FAKE names ("Alex Rivera",
  * "Sam Porter") are passed only to exercise the guard, and the output is
@@ -55,7 +56,7 @@ const page = await (await newSignedInContext(browser, account, BASE)).newPage()
 await page.goto(`${BASE}/home`)
 
 const words = (t) => (t ?? '').trim().split(/\s+/).filter(Boolean).length
-const totals = { questions: {}, case: {}, confession: {} }
+const totals = { questions: {}, case: {}, alibis: {}, confession: {} }
 let failures = 0
 
 for (const settingId of ids) {
@@ -78,8 +79,8 @@ for (const settingId of ids) {
     continue
   }
   const s = res.data
-  for (const step of ['questions', 'case', 'confession']) totals[step][s.steps[step]] = (totals[step][s.steps[step]] ?? 0) + 1
-  console.log(`steps: questions ${s.steps.questions} · case ${s.steps.case} · confession ${s.steps.confession}`)
+  for (const step of ['questions', 'case', 'alibis', 'confession']) totals[step][s.steps[step]] = (totals[step][s.steps[step]] ?? 0) + 1
+  console.log(`steps: questions ${s.steps.questions} · case ${s.steps.case} · alibis ${s.steps.alibis} · confession ${s.steps.confession}`)
   const qs = [...s.questions.host.map((q) => ['host', q]), ...s.questions.guest.map((q) => ['guest', q])]
   qs.forEach(([who, q], i) => {
     console.log(`\n[Q${i + 1} · ${who}] (${words(q.beat)} words) ${q.beat}`)
@@ -87,6 +88,8 @@ for (const settingId of ids) {
   })
   console.log(`\nCASE: "${s.caseTitle}" · victim: ${s.victim}`)
   console.log(`\nOPENING (${words(s.openingNarration)} words, ${s.openingNarration.length} chars):\n${s.openingNarration}`)
+  console.log(`\nALIBIS (${s.alibis.length}):`)
+  for (const a of s.alibis) console.log(`  [${a.kind}] ${a.card} (${words(a.text)} words): ${a.text}`)
   console.log(`\nSOLUTION: ${s.solution.culprit} / ${s.solution.method} / ${s.solution.place}`)
   console.log(`CONFESSION (${words(s.confession)} words, ${s.confession.length} chars):\n${s.confession}`)
   const allText = JSON.stringify(s)
@@ -101,6 +104,7 @@ const rate = (step) => `${totals[step]['first-try'] ?? 0}/${n} first try, ${tota
 console.log(`\n==================== TOTALS (${n} settings) ====================`)
 console.log(`questions:  ${rate('questions')}`)
 console.log(`case:       ${rate('case')}`)
+console.log(`alibis:     ${rate('alibis')}`)
 console.log(`confession: ${rate('confession')}`)
 console.log(`name leaks: ${leaks === 0 ? 'none in any sample' : `${leaks} sample(s) contain a fake-name token`}`)
 if (failures || leaks) process.exit(1)

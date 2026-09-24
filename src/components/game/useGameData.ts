@@ -20,6 +20,8 @@ export interface GameData {
   currentRound: number
   status: 'lobby' | 'playing' | 'finished'
   seriesWinner: string
+  /** R41: who starts round 1 (a coin flip at the start of the series). */
+  firstStarter: Player | ''
 }
 
 export interface PlayerData {
@@ -53,6 +55,26 @@ export interface RoundData {
   openingAudioUrl: string
   confession: string
   confessionAudioUrl: string
+  /** R41: completed turns, and the alibis drawn so far (JSON list of RevealedAlibi). */
+  turnsPlayed: number
+  revealedAlibis: string
+}
+
+/** R41: an alibi drawn during play: the card it clears and why. */
+export interface RevealedAlibi {
+  cardId: string
+  text: string
+  afterTurn: number
+}
+
+/** The round's drawn alibis, oldest first (rounds opened before R41 have none). */
+export function alibisOf(round: Pick<RoundData, 'revealedAlibis'> | undefined): RevealedAlibi[] {
+  if (!round?.revealedAlibis) return []
+  try {
+    return (JSON.parse(round.revealedAlibis) as RevealedAlibi[]).sort((a, b) => a.afterTurn - b.afterTurn)
+  } catch {
+    return []
+  }
 }
 
 /** A player's case question, as prepared by the server. */

@@ -49,6 +49,8 @@ export const gamesSchema: CollectionSchema = {
     text('status'),
     /** The winner's user id once the series is decided. */
     text('seriesWinner'),
+    /** R41: who starts round 1 ('host' or 'guest'), a coin flip at startSeries; later rounds alternate. */
+    text('firstStarter'),
   ],
   permissions: signedInReadOnly,
 }
@@ -103,6 +105,10 @@ export const roundsSchema: CollectionSchema = {
     /** R36: written at the reveal (a template at once, the AI's version when ready). */
     text('confession'),
     text('confessionAudioUrl'),
+    /** R41: completed turns this round (endTurn counts them); an alibi is drawn after turns 4, 8, ... */
+    number('turnsPlayed'),
+    /** R41: the alibis drawn so far, public JSON: [{ cardId, text, afterTurn }]. */
+    text('revealedAlibis'),
   ],
   permissions: signedInReadOnly,
 }
@@ -139,6 +145,18 @@ export const handsSchema: CollectionSchema = {
 export const solutionSchema: CollectionSchema = {
   name: 'solution',
   columns: [text('roundId'), text('suspect'), text('weapon'), text('location')],
+  permissions: { '*': NO_ACCESS },
+}
+
+/**
+ * R41: one alibi text per card of a round, written when the round opens (a
+ * code template, then the AI's version from the 'alibis' job in production).
+ * Server-only, like the solution: no client may read it. When an alibi is
+ * drawn, the server copies that one text into the round's revealedAlibis.
+ */
+export const alibiTextsSchema: CollectionSchema = {
+  name: 'alibiTexts',
+  columns: [text('roundId'), text('cardId'), text('text')],
   permissions: { '*': NO_ACCESS },
 }
 
@@ -259,6 +277,7 @@ export const gameSchemas: CollectionSchema[] = [
   cardsSchema,
   handsSchema,
   solutionSchema,
+  alibiTextsSchema,
   joinCodesSchema,
   guessesSchema,
   shownCardsSchema,

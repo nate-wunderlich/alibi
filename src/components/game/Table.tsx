@@ -17,7 +17,7 @@ import { CardView, FileLabel, InlineError, KIND_LABEL, KINDS } from './CardView'
 import { DetectiveGrid } from './DetectiveGrid'
 import { NarrationAudio } from './NarrationAudio'
 import { Scoreboard } from './Scoreboard'
-import type { Card, GameView, Guess, Round } from './useGameData'
+import { alibisOf, type Card, type GameView, type Guess, type RevealedAlibi, type Round } from './useGameData'
 
 type Pick = Record<CardKind, string>
 const EMPTY_PICK: Pick = { suspect: '', weapon: '', location: '' }
@@ -75,7 +75,7 @@ export function Table({ view, round }: { view: GameView; round: Round }) {
 
       <DetectiveGrid key={round.id} view={view} round={round} />
 
-      <RoundLog view={view} />
+      <RoundLog view={view} round={round} />
 
       <Cast view={view} round={round} />
     </section>
@@ -281,8 +281,17 @@ function ShowCardPrompt({ view, guess }: { view: GameView; guess: Guess }) {
   )
 }
 
-/** Every guess this round, oldest first, with its result. */
-function RoundLog({ view }: { view: GameView }) {
+/**
+ * Every guess this round, oldest first, with its result, and each alibi
+ * (R41) in turn order. A turn is one guess (R33), so the alibi drawn after
+ * turn N follows the Nth guess.
+ */
+function RoundLog({ view, round }: { view: GameView; round: Round }) {
+  const alibis = alibisOf(round)
+  const entries: ({ type: 'guess'; at: number; guess: Guess } | { type: 'alibi'; at: number; alibi: RevealedAlibi })[] = [
+    ...view.guesses.map((guess, i) => ({ type: 'guess' as const, at: i + 1, guess })),
+    ...alibis.map((alibi) => ({ type: 'alibi' as const, at: alibi.afterTurn + 0.5, alibi })),
+  ].sort((a, b) => a.at - b.at)
   const name = (id: string) => view.cardsById.get(id)?.name ?? '?'
   const resultText = (g: Guess) => {
     if (g.result === 'none') return 'No match.'
@@ -297,38 +306,69 @@ function RoundLog({ view }: { view: GameView }) {
   return (
     <div>
       <FileLabel>Round log</FileLabel>
-      {view.guesses.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">No guesses yet.</p>
       ) : (
         <ol className="space-y-2">
-          {view.guesses.map((g) => (
-            <li
-              key={g.id}
-              data-testid="round-log-entry"
-              data-result={g.result}
-              data-shown-card-id={g.byUserId === view.myId ? (view.shownToMe.get(g.id) ?? '') : ''}
-              className="rounded-sm border border-border bg-card px-3 py-2 text-sm"
-            >
-              <span className="font-semibold">{view.nameOf(g.byUserId)}</span> guessed {name(g.suspect)}, with{' '}
-              {name(g.weapon)}, in {name(g.location)}.{' '}
-              <span className={g.result === 'shown' && g.byUserId === view.myId ? 'text-primary' : 'text-muted-foreground'}>
-                {resultText(g)}
-              </span>
-            </li>
-          ))}
+          {entries.map((entry) =>
+            entry.type === 'alibi' ? (
+              <li
+                key={`alibi-${entry.alibi.cardId}`}
+                data-testid="round-alibi"
+                data-card-id={entry.alibi.cardId}
+                className="rounded-sm border border-primary/60 bg-primary/5 px-3 py-2 text-sm"
+              >
+                <span className="font-mono text-[11px] uppercase tracking-widest text-primary">Alibi</span>{' '}
+                <span className="font-semibold">{name(entry.alibi.cardId)}</span> is cleared.
+                <p className="mt-1 border-l-2 border-primary pl-3 font-display italic leading-relaxed">{entry.alibi.text}</p>
+              </li>
+            ) : (
+              <GuessEntry key={entry.guess.id} view={view} g={entry.guess} name={name} resultText={resultText} />
+            ),
+          )}
         </ol>
       )}
     </div>
   )
 }
 
+/** One guess in the round log. */
+function GuessEntry({
+  view,
+  g,
+  name,
+  resultText,
+}: {
+  view: GameView
+  g: Guess
+  name: (id: string) => string
+  resultText: (g: Guess) => string
+}) {
+  return (
+    <li
+      data-testid="round-log-entry"
+      data-result={g.result}
+      data-shown-card-id={g.byUserId === view.myId ? (view.shownToMe.get(g.id) ?? '') : ''}
+      className="rounded-sm border border-border bg-card px-3 py-2 text-sm"
+    >
+      <span className="font-semibold">{view.nameOf(g.byUserId)}</span> guessed {name(g.suspect)}, with{' '}
+      {name(g.weapon)}, in {name(g.location)}.{' '}
+      <span className={g.result === 'shown' && g.byUserId === view.myId ? 'text-primary' : 'text-muted-foreground'}>
+        {resultText(g)}
+      </span>
+    </li>
+  )
+}
+
 /** The 12 cards grouped by kind, with a note on what I know about each. */
 function Cast({ view, round }: { view: GameView; round: Round }) {
   const shownIds = new Set(view.shownToMe.values())
+  const clearedIds = new Set(alibisOf(round).map((a) => a.cardId))
   const noteFor = (c: Card) => {
     if (view.myHand.includes(c.id)) return 'In your hand'
     if (c.id === round.faceUpCardId) return 'Face up'
     if (shownIds.has(c.id)) return 'Shown to you'
+    if (clearedIds.has(c.id)) return 'Cleared by an alibi'
     return undefined
   }
   return (

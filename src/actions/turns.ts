@@ -13,7 +13,18 @@ import type { ActionHandler, ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { portraitsEnabled } from '../server/portraits'
 import { templateConfession } from '../server/narration'
-import { checkAccusation, nextTurn, resolveGuess, seriesWinner, type Card, type Player, type Triple } from '../game/rules'
+import { templateAlibi } from '../game/alibis'
+import {
+  alibiDue,
+  checkAccusation,
+  nextTurn,
+  pickAlibiCard,
+  resolveGuess,
+  seriesWinner,
+  type Card,
+  type Player,
+  type Triple,
+} from '../game/rules'
 import {
   action,
   loadCards,
@@ -27,6 +38,7 @@ import {
   textParam,
   userInSeat,
   type Game,
+  type RevealedAlibi,
   type Round,
 } from './helpers'
 import { loadAnswers, prepareRound, queueMediaJob } from './rounds'
@@ -123,15 +135,61 @@ const showCard = action(async ({ userId, params, tools }) => {
   return { guessId }
 })
 
-/** endTurn({ roundId }): after guessing, the player on turn passes it (rules.nextTurn). */
+/**
+ * R41: draw the alibi due after a turn, on the server only. rules.pickAlibiCard
+ * picks a card from the round starter's hand that is not public yet (face up
+ * or drawn before); its text is read from the server-only alibiTexts. Returns
+ * the round's alibis with the new one appended, or unchanged if none is left.
+ */
+async function drawAlibi(tools: ActionTools, game: Game, round: Round, afterTurn: number): Promise<RevealedAlibi[]> {
+  if (round.starter === '') throw new Error('The round has no starter.')
+  const cards = await loadCards(tools, round.id)
+  const byId = (id: string) => cards.find((c) => c.id === id)!
+  const hands: Record<Player, Card[]> = { host: [], guest: [] }
+  for (const seat of ['host', 'guest'] as const) {
+    hands[seat] = (await loadHandIds(tools, round.id, userInSeat(game, seat))).map(byId)
+  }
+  const dealt = { envelope: await loadSolution(tools, round.id), hands, faceUp: byId(round.faceUpCardId) }
+  const alreadyPublic = [round.faceUpCardId, ...round.revealedAlibis.map((a) => a.cardId)]
+  const card = pickAlibiCard(dealt, round.starter, alreadyPublic, Math.random)
+  if (!card) return round.revealedAlibis
+
+  const rows = must(
+    await tools.query('alibiTexts', { where: { roundId: round.id, cardId: card.id }, limit: 1 }),
+    'Loading the alibi',
+  )
+  const stored = rows.records[0]?.data.text
+  const name = await tools.get<Record<string, unknown>>('cards', card.id)
+  const text =
+    typeof stored === 'string' && stored !== ''
+      ? stored
+      : templateAlibi({ kind: card.kind, name: name.success ? String(name.data.record.data.name) : 'This card' })
+  return [...round.revealedAlibis, { cardId: card.id, text, afterTurn }]
+}
+
+/**
+ * endTurn({ roundId }): after guessing, the player on turn passes it
+ * (rules.nextTurn). R41: every completed turn is counted, and when an alibi
+ * is due (rules.alibiDue) the server draws one into the round.
+ */
 const endTurn = action(async ({ userId, params, tools }) => {
   const roundId = textParam(params, 'roundId')
   const { round, game, seat } = await loadPlayingRound(tools, roundId, userId)
   requireTurn(round, userId)
   if (!round.guessedThisTurn) refuse('Guess before ending your turn.')
 
+  const turnsPlayed = round.turnsPlayed + 1
+  const alibis = alibiDue(turnsPlayed) ? await drawAlibi(tools, game, round, turnsPlayed) : round.revealedAlibis
   const nextUserId = userInSeat(game, nextTurn(seat))
-  must(await tools.update('rounds', roundId, { turnUserId: nextUserId, guessedThisTurn: 0 }), 'Passing the turn')
+  must(
+    await tools.update('rounds', roundId, {
+      turnUserId: nextUserId,
+      guessedThisTurn: 0,
+      turnsPlayed,
+      ...(alibis !== round.revealedAlibis ? { revealedAlibis: JSON.stringify(alibis) } : {}),
+    }),
+    'Passing the turn',
+  )
   return { turnUserId: nextUserId }
 })
 
