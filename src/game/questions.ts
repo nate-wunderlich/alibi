@@ -52,6 +52,10 @@ function checkQuestion(item: unknown, n: number): string[] {
     if (term) errors.push(`Question ${n}'s scene beat is too graphic ("${term}").`)
     // R38: the beat speaks to the player, and does not give the options away.
     if (!/\b(you|your)\b/i.test(beat)) errors.push(`Question ${n}'s scene beat must address the player ("you" or "your").`)
+    // D39: the beat sets the scene; the question below it does the asking.
+    if (beat.trim().endsWith('?')) {
+      errors.push(`Question ${n}'s scene beat ends with "?"; the question below it already asks, so end the beat with a statement.`)
+    }
     if (Array.isArray(answers)) {
       const leaked = answers.filter((a) => typeof a === 'string' && a.trim() && beat.toLowerCase().includes(a.trim().toLowerCase()))
       if (leaked.length >= 2) {

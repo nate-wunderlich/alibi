@@ -149,6 +149,14 @@ describe('scene beats (R37)', () => {
     expect(validateQuestions(one).ok).toBe(true)
   })
 
+  it('rejects a beat that ends with "?", because the question below it already asks (D39)', () => {
+    const asking = validSet()
+    asking[0] = { ...asking[0], beat: 'You stand over the body. Who found them first?' }
+    const result = validateQuestions(asking)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.join(' ')).toMatch(/question below/i)
+  })
+
   it('applies the tone guard to beats', () => {
     const graphic = validSet()
     graphic[0] = { ...graphic[0], beat: 'You find blood on the stairs.' }
