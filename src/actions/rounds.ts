@@ -82,12 +82,14 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
     `Preparing round ${number}`,
   )
 
+  // R39 guard: whoever has joined so far (the guest may not have joined round 1 yet).
+  const questionGuard = await guardNames(tools, game)
   const fromAi = await askForJson<QuestionSet>(
     tools,
     `questions for round ${number} (${setting.id})`,
     buildQuestionPrompt(setting),
     (value) => {
-      const checked = validateQuestions(value)
+      const checked = validateQuestions(value, { playerNames: questionGuard })
       return checked.ok ? { ok: true, value: splitForPlayers(checked.questions) } : checked
     },
     900,
@@ -127,16 +129,13 @@ export async function loadAnswers(tools: ActionTools, roundId: string, game: Gam
   return byUser
 }
 
-/** Each player's display name, for crediting their choices (R37); the seat if a name is missing. */
-export async function playerNames(tools: ActionTools, game: Game): Promise<Record<string, string>> {
+/**
+ * The players' display names, for the R39 guard only: generated text that
+ * contains any of them is rejected. These names never go into a prompt.
+ */
+export async function guardNames(tools: ActionTools, game: Game): Promise<string[]> {
   const rows = must(await tools.query('players', { where: { gameId: game.id }, limit: 10 }), 'Loading the players')
-  const names: Record<string, string> = {}
-  for (const seat of SEATS) {
-    const id = userInSeat(game, seat)
-    const row = rows.records.find((r) => r.data.userId === id)
-    names[id] = String(row?.data.displayName ?? '').trim() || (seat === 'host' ? 'The host' : 'The guest')
-  }
-  return names
+  return rows.records.map((r) => String(r.data.displayName ?? '').trim()).filter((n) => n !== '')
 }
 
 /** Ask the AI for the case; fall back to the preset case after one retry. */
@@ -146,7 +145,7 @@ async function writeCase(
   settingId: string,
   number: number,
   answers: AnsweredQuestion[],
-  players: { host: string; guest: string },
+  playerNames: string[],
 ) {
   const setting = SETTINGS.find((s) => s.id === settingId)
   if (!setting) return PRESET_CASE
@@ -157,9 +156,9 @@ async function writeCase(
   const generated = await askForJson<PresetCase>(
     tools,
     `case for round ${number} (${setting.id})`,
-    buildCasePrompt(setting, answers, earlierTitles, players),
+    buildCasePrompt(setting, answers, earlierTitles),
     (value) => {
-      const checked = validateCase(value, { settingName: setting.name, players })
+      const checked = validateCase(value, { settingName: setting.name, playerNames })
       return checked.ok ? { ok: true, value: checked.case } : checked
     },
     2000,
@@ -188,13 +187,12 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
   must(await tools.update('rounds', roundId, { status: 'generating' }), 'Starting to write the case')
   try {
     const answers = await loadAnswers(tools, roundId, game)
-    const names = await playerNames(tools, game)
-    const all = SEATS.flatMap((seat) => {
-      const id = userInSeat(game, seat)
-      return answers[id].map((a) => ({ player: names[id], question: a.question, answer: a.answer }))
-    })
-    const players = { host: names[game.host], guest: names[game.guest] }
-    const theCase = await writeCase(tools, game, round.settingId, round.number, all, players)
+    // R39: choices are labelled by seat; the names are loaded only for the guard.
+    const all: AnsweredQuestion[] = SEATS.flatMap((seat) =>
+      answers[userInSeat(game, seat)].map((a) => ({ seat, question: a.question, answer: a.answer })),
+    )
+    const names = await guardNames(tools, game)
+    const theCase = await writeCase(tools, game, round.settingId, round.number, all, names)
     await layOutAndDeal(tools, game, roundId, round.number, theCase)
   } catch (e) {
     await tools.update('rounds', roundId, { status: 'answering' })

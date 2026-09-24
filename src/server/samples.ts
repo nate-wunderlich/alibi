@@ -18,7 +18,6 @@ export type StepOutcome = 'first-try' | 'retry' | 'fallback'
 
 export interface SampleResult {
   setting: string
-  players: { host: string; guest: string }
   steps: { questions: StepOutcome; case: StepOutcome; confession: StepOutcome }
   questions: QuestionSet
   answers: AnsweredQuestion[]
@@ -43,11 +42,12 @@ function tracker() {
   }
 }
 
-export async function runSample(
-  tools: IntegrationCaller,
-  setting: Setting,
-  players: { host: string; guest: string },
-): Promise<SampleResult> {
+/**
+ * `guardNames` are FAKE display names (the script passes "Alex Rivera" and
+ * "Sam Porter"): they only exercise the R39 guard, exactly as the game passes
+ * real names to it. They never go into a prompt.
+ */
+export async function runSample(tools: IntegrationCaller, setting: Setting, guardNames: string[]): Promise<SampleResult> {
   // 1. Questions, exactly as prepareRound asks for them (fallback: the generic bank).
   const q = tracker()
   const questions =
@@ -56,17 +56,17 @@ export async function runSample(
       `sample questions (${setting.id})`,
       buildQuestionPrompt(setting),
       (value) => {
-        const checked = validateQuestions(value)
+        const checked = validateQuestions(value, { playerNames: guardNames })
         return checked.ok ? { ok: true, value: splitForPlayers(checked.questions) } : checked
       },
       900,
       q.report,
     )) ?? fallbackQuestions(Math.random)
 
-  // 2. Fixed taps: the second option of every question; the host answers the first two.
+  // 2. Fixed taps: the second option of every question, labelled by seat (R39).
   const answers: AnsweredQuestion[] = [
-    ...questions.host.map((x) => ({ player: players.host, question: x.text, answer: x.answers[1] })),
-    ...questions.guest.map((x) => ({ player: players.guest, question: x.text, answer: x.answers[1] })),
+    ...questions.host.map((x) => ({ seat: 'host' as const, question: x.text, answer: x.answers[1] })),
+    ...questions.guest.map((x) => ({ seat: 'guest' as const, question: x.text, answer: x.answers[1] })),
   ]
 
   // 3. The case, exactly as openRound asks for it (fallback: the preset case).
@@ -75,9 +75,9 @@ export async function runSample(
     (await askForJson<PresetCase>(
       tools,
       `sample case (${setting.id})`,
-      buildCasePrompt(setting, answers, [], players),
+      buildCasePrompt(setting, answers, []),
       (value) => {
-        const checked = validateCase(value, { settingName: setting.name, players })
+        const checked = validateCase(value, { settingName: setting.name, playerNames: guardNames })
         return checked.ok ? { ok: true, value: checked.case } : checked
       },
       2000,
@@ -104,14 +104,13 @@ export async function runSample(
         place,
         answers,
       }),
-      (value) => validateConfession(value, culprit.name),
+      (value) => validateConfession(value, culprit.name, guardNames),
       500,
       k.report,
     )) ?? templateConfession({ culprit: culprit.name, method: method.name, place: place.name })
 
   return {
     setting: setting.name,
-    players,
     steps: { questions: q.outcome, case: c.outcome, confession: k.outcome },
     questions,
     answers,

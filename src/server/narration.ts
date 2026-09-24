@@ -14,7 +14,14 @@
  */
 
 import { askForJson, integrationFromCron } from '../actions/ai'
-import { findGraphicTerm, type AnsweredQuestion, type Prompt } from '../game/caseGen'
+import {
+  containsPlayerName,
+  findGraphicTerm,
+  playerNameError,
+  seatLabel,
+  type AnsweredQuestion,
+  type Prompt,
+} from '../game/caseGen'
 import { SETTINGS } from '../game/settings'
 import { toBase64 } from './media'
 import type { PortraitDeps } from './portraits'
@@ -47,7 +54,7 @@ export function confessionPrompt(c: {
   culprit: Named
   method: Named
   place: Named
-  /** Both players' choices, by display name (R37). */
+  /** Both players' choices, by seat only (R39: never by name). */
   answers: AnsweredQuestion[]
 }): Prompt {
   return {
@@ -65,21 +72,25 @@ export function confessionPrompt(c: {
       `How: ${c.method.name}. ${c.method.description}`,
       `Where: ${c.place.name}. ${c.place.description}`,
       '',
-      "The players' choices that shaped this case, by player:",
-      ...c.answers.map((a) => `${a.player}: ${a.question} -> ${a.answer}`),
+      'The players\' choices that shaped this case, by seat (players are only ever "the host" and "the guest"):',
+      ...c.answers.map((a) => `${seatLabel(a.seat)}: ${a.question} -> ${a.answer}`),
       '',
       `Write the confession in the culprit's own voice, in the first person, 60 to 90 words, spoken aloud.`,
       `Start by saying their full name, "${c.culprit.name}". Say how and where, and give the motive.`,
-      'Pay off at least one choice from each player, so both players hear their choices mattered.',
+      'Pay off at least one choice from each player, so both players hear their choices mattered. Never use a player\'s name; say "the host" or "the guest" if you refer to them.',
       'End with a small twist. Dramatic but never gruesome.',
     ].join('\n'),
   }
 }
 
-/** Check the AI's confession: a string, under the length cap, not graphic, and naming the culprit. */
+/**
+ * Check the AI's confession: a string, under the length cap, not graphic,
+ * naming the culprit, and (R39) containing no token of a player's name.
+ */
 export function validateConfession(
   input: unknown,
   culpritName: string,
+  playerNames?: string[],
 ): { ok: true; value: string } | { ok: false; errors: string[] } {
   const text = (input as { confession?: unknown } | null)?.confession
   if (typeof text !== 'string' || text.trim() === '') return { ok: false, errors: ['No confession text.'] }
@@ -89,6 +100,7 @@ export function validateConfession(
   const term = findGraphicTerm(trimmed)
   if (term) errors.push(`The confession is too graphic ("${term}").`)
   if (!trimmed.toLowerCase().includes(culpritName.toLowerCase())) errors.push('The confession does not name the culprit.')
+  if (playerNames && containsPlayerName(trimmed, playerNames)) errors.push(playerNameError('The confession'))
   return errors.length ? { ok: false, errors } : { ok: true, value: trimmed }
 }
 
@@ -151,17 +163,20 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
 
   if (!confession || confession === template) {
     const setting = SETTINGS.find((s) => s.id === round.settingId)
-    // Both players' choices (copied into the round at the reveal), credited by display name (R37).
+    // Both players' choices (copied into the round at the reveal), labelled by seat (R39).
+    const games = (await deps.records.query('games', { where: { recordId: round.gameId ?? '' }, limit: 1 })) as Row<{
+      host?: string
+    }>[]
+    const hostId = games[0]?.data.host ?? ''
+    const revealed = JSON.parse(round.revealedAnswers || '{}') as Record<string, { question: string; answer: string }[]>
+    const answers: AnsweredQuestion[] = Object.entries(revealed).flatMap(([userId, list]) =>
+      list.map((a) => ({ seat: userId === hostId ? ('host' as const) : ('guest' as const), question: a.question, answer: a.answer })),
+    )
+    // The players' display names are loaded only for the guard; they never go into the prompt (R39).
     const players = (await deps.records.query('players', { where: { gameId: round.gameId ?? '' }, limit: 10 })) as Row<{
-      userId: string
       displayName?: string
     }>[]
-    const nameOf = (userId: string) =>
-      players.find((p) => p.data.userId === userId)?.data.displayName?.trim() || 'A player'
-    const revealed = JSON.parse(round.revealedAnswers || '{}') as Record<string, { question: string; answer: string }[]>
-    const answers = Object.entries(revealed).flatMap(([userId, list]) =>
-      list.map((a) => ({ player: nameOf(userId), question: a.question, answer: a.answer })),
-    )
+    const playerNames = players.map((p) => p.data.displayName ?? '').filter((n) => n.trim() !== '')
     const written = await askForJson<string>(
       integrationFromCron(deps.integrations),
       `confession for round ${job.roundId}`,
@@ -174,7 +189,7 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
         place,
         answers,
       }),
-      (value) => validateConfession(value, culprit.name),
+      (value) => validateConfession(value, culprit.name, playerNames),
       500,
     )
     if (written) {

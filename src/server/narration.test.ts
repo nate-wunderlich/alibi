@@ -33,8 +33,8 @@ describe('confessionPrompt', () => {
     method,
     place,
     answers: [
-      { player: 'Nathan', question: 'Who knocked on the door?', answer: 'A merchant captain' },
-      { player: 'Nate', question: 'Where did the lamp oil go?', answer: 'The cellar' },
+      { seat: 'host', question: 'Who knocked on the door?', answer: 'A merchant captain' },
+      { seat: 'guest', question: 'Where did the lamp oil go?', answer: 'The cellar' },
     ],
   })
   const text = prompt.system + prompt.user
@@ -62,8 +62,9 @@ describe('confessionPrompt', () => {
   })
 
   it("includes both players' names and answers, and asks for the motive, a payoff for each player, and a twist (R37)", () => {
-    expect(text).toContain('Nathan: Who knocked on the door? -> A merchant captain')
-    expect(text).toContain('Nate: Where did the lamp oil go? -> The cellar')
+    expect(text).toContain('the host: Who knocked on the door? -> A merchant captain')
+    expect(text).toContain('the guest: Where did the lamp oil go? -> The cellar')
+    for (const token of ['Nathan', 'Nate', 'Wunderlich']) expect(text).not.toMatch(new RegExp(`\\b${token}\\b`, 'i'))
     expect(text).toMatch(/motive/i)
     expect(text).toMatch(/each player/i)
     expect(text).toMatch(/twist/i)
@@ -75,6 +76,16 @@ describe('validateConfession', () => {
 
   it('accepts a confession that names the culprit', () => {
     expect(validateConfession({ confession: good }, culprit.name)).toEqual({ ok: true, value: good })
+  })
+
+  it("rejects a confession containing a player-name token, without echoing it (R39)", () => {
+    const names = ['Nathan Wunderlich', 'Nate Wunderlich']
+    for (const token of ['Nathan', 'Nate', 'Wunderlich']) {
+      const result = validateConfession({ confession: `${good} I blame ${token}.` }, culprit.name, names)
+      expect(result.ok, token).toBe(false)
+      if (!result.ok) expect(result.errors.join(' ')).not.toMatch(/Nathan|Nate|Wunderlich/i)
+    }
+    expect(validateConfession({ confession: `${good} Natalie saw nothing.` }, culprit.name, names).ok).toBe(true)
   })
 
   it('rejects over-length text, graphic terms, and text that does not name the culprit', () => {

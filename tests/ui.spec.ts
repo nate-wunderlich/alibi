@@ -62,6 +62,16 @@ test('create, join, lobby, start, table, and a guess seen by both players', asyn
   for (const u of [alice, bob]) {
     const questions = u.page.getByTestId('question')
     await expect(questions, `${u.name} gets 2 questions`).toHaveCount(2, { timeout: 30_000 })
+    // R37/D40: each scene beat sits ABOVE its question (DOM order, not just styling).
+    for (let i = 0; i < 2; i++) {
+      const order = await questions.nth(i).evaluate((el) => {
+        const beat = el.querySelector('[data-testid="question-beat"]')
+        const text = el.querySelector('[data-testid="question-text"]')
+        if (!beat || !text) return 'missing'
+        return beat.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING ? 'beat-first' : 'question-first'
+      })
+      expect(order, `${u.name}'s question ${i + 1}: beat above the question`).toBe('beat-first')
+    }
     for (let i = 0; i < 2; i++) await questions.nth(i).getByTestId('answer-option').first().click()
     await u.page.getByTestId('submit-answers').click()
     await expect(u.page.getByTestId('my-answers'), `${u.name}'s answers are locked in`).toBeVisible(T)

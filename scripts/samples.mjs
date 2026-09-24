@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * npm run samples [-- N | setting-id ...] [--host=Name] [--guest=Name]
+ * npm run samples [-- N | setting-id ...]
  *
  * R38 (4): measure prose quality instead of eyeballing it. Runs N settings
  * (default 3, picked at random without repeats) or the named setting ids
@@ -8,6 +8,10 @@
  * action, which refuses in a production build), then prints the scene beats,
  * the assembled opening, the confession, and first-try / retry / fallback per
  * step, with totals. Text AI only: about 3 calls per setting.
+ *
+ * R39: player names never reach the AI. Two FAKE names ("Alex Rivera",
+ * "Sam Porter") are passed only to exercise the guard, and the output is
+ * checked for any token of them.
  *
  * Needs: the dev server running (npm run dev) and a local test account
  * (npx deepspace test accounts create ...).
@@ -18,10 +22,10 @@ import { chromium } from '@playwright/test'
 import { loadAllTestAccounts, newSignedInContext } from 'deepspace/testing'
 
 const BASE = `http://localhost:${process.env.DEEPSPACE_PORT ?? 5173}`
-const args = process.argv.slice(2)
-const flag = (name, fallback) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback
-const players = { host: flag('host', 'Nathan'), guest: flag('guest', 'Nate') }
-const positional = args.filter((a) => !a.startsWith('--'))
+const positional = process.argv.slice(2)
+const FAKE_NAMES = ['Alex Rivera', 'Sam Porter']
+const fakeTokens = FAKE_NAMES.flatMap((n) => n.split(/\s+/)).filter((t) => t.length >= 3)
+let leaks = 0
 
 // The setting ids, read from the source so this list never drifts.
 const allIds = [...readFileSync(new URL('../src/game/settings.ts', import.meta.url), 'utf8').matchAll(/^\s+id: "([^"]+)"/gm)].map((m) => m[1])
@@ -65,7 +69,7 @@ for (const settingId of ids) {
       })
       return r.json()
     },
-    { settingId, hostName: players.host, guestName: players.guest },
+    { settingId, guardNames: FAKE_NAMES },
   )
   console.log(`\n==================== ${settingId} ====================`)
   if (!res.success) {
@@ -76,7 +80,7 @@ for (const settingId of ids) {
   const s = res.data
   for (const step of ['questions', 'case', 'confession']) totals[step][s.steps[step]] = (totals[step][s.steps[step]] ?? 0) + 1
   console.log(`steps: questions ${s.steps.questions} · case ${s.steps.case} · confession ${s.steps.confession}`)
-  const qs = [...s.questions.host.map((q) => [s.players.host, q]), ...s.questions.guest.map((q) => [s.players.guest, q])]
+  const qs = [...s.questions.host.map((q) => ['host', q]), ...s.questions.guest.map((q) => ['guest', q])]
   qs.forEach(([who, q], i) => {
     console.log(`\n[Q${i + 1} · ${who}] (${words(q.beat)} words) ${q.beat}`)
     console.log(`   ${q.text}  -> tapped "${q.answers[1]}"`)
@@ -85,6 +89,10 @@ for (const settingId of ids) {
   console.log(`\nOPENING (${words(s.openingNarration)} words, ${s.openingNarration.length} chars):\n${s.openingNarration}`)
   console.log(`\nSOLUTION: ${s.solution.culprit} / ${s.solution.method} / ${s.solution.place}`)
   console.log(`CONFESSION (${words(s.confession)} words, ${s.confession.length} chars):\n${s.confession}`)
+  const allText = JSON.stringify(s)
+  const found = fakeTokens.filter((t) => new RegExp(`\\b${t}\\b`, 'i').test(allText))
+  if (found.length) leaks++
+  console.log(`\nfake-name tokens in any generated text: ${found.length ? 'FOUND ' + found.join(', ') : 'none'}`)
 }
 
 await browser.close()
@@ -94,4 +102,5 @@ console.log(`\n==================== TOTALS (${n} settings) ====================`
 console.log(`questions:  ${rate('questions')}`)
 console.log(`case:       ${rate('case')}`)
 console.log(`confession: ${rate('confession')}`)
-if (failures) process.exit(1)
+console.log(`name leaks: ${leaks === 0 ? 'none in any sample' : `${leaks} sample(s) contain a fake-name token`}`)
+if (failures || leaks) process.exit(1)

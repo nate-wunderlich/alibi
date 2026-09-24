@@ -26,8 +26,8 @@ function validCase(): GeneratedCase {
     victim: 'Chief Engineer Vale',
     openingParts: {
       scene: 'The alarm stopped. Nobody on the ship could say who opened the airlock.',
-      creditHost: 'Nathan heard the hull groan just before the lights went out.',
-      creditGuest: 'Nate found the cargo bay door sealed from the inside.',
+      creditHost: 'The host heard the hull groan just before the lights went out.',
+      creditGuest: 'The guest found the cargo bay door sealed from the inside.',
       hook: 'So who wanted the engineer silenced?',
     },
     suspects: cards('Suspect'),
@@ -101,8 +101,8 @@ describe('validateCase', () => {
     if (result.ok) {
       expect(result.case.openingNarration).toBe(
         'The alarm stopped. Nobody on the ship could say who opened the airlock. ' +
-          'Nathan heard the hull groan just before the lights went out. ' +
-          'Nate found the cargo bay door sealed from the inside. ' +
+          'The host heard the hull groan just before the lights went out. ' +
+          'The guest found the cargo bay door sealed from the inside. ' +
           'Four suspects remain: Suspect 1, Suspect 2, Suspect 3, and Suspect 4. ' +
           'So who wanted the engineer silenced?',
       )
@@ -211,65 +211,92 @@ describe('validateCase tone guard', () => {
 describe('assembleOpening (R38)', () => {
   const parts: OpeningParts = {
     scene: 'Fog rolls in off the water.',
-    creditHost: 'Nathan let the captain in.',
-    creditGuest: 'Nate heard the lamp go dark.',
+    creditHost: 'The host let the captain in.',
+    creditGuest: 'The guest heard the lamp go dark.',
     hook: 'Who wanted the keeper gone?',
   }
 
   it('puts the 4 exact suspect names in the fixed sentence and ends with the hook', () => {
     const text = assembleOpening(parts, ['Captain Roswell', 'Eliza Crow', 'Thomas Wrenn', 'Dr. Iris Strand'])
     expect(text).toContain('Four suspects remain: Captain Roswell, Eliza Crow, Thomas Wrenn, and Dr. Iris Strand.')
-    expect(text.startsWith('Fog rolls in off the water. Nathan let the captain in. Nate heard the lamp go dark.')).toBe(true)
+    expect(text.startsWith('Fog rolls in off the water. The host let the captain in. The guest heard the lamp go dark.')).toBe(true)
     expect(text.endsWith('Who wanted the keeper gone?')).toBe(true)
   })
 })
 
-describe('validateOpeningParts (R38)', () => {
-  const players = { host: 'Nathan', guest: 'Nate' }
+describe('validateOpeningParts (R39: seats, not names)', () => {
   const good = (): OpeningParts => ({
     scene: 'Fog rolls in off the water and the lamp gutters.',
-    creditHost: 'Because Nathan let the captain in, the door stood open all night.',
-    creditGuest: 'Because Nate followed the footprints, the cellar is no longer a secret.',
+    creditHost: 'Because the host let the captain in, the door stood open all night.',
+    creditGuest: 'Because the guest followed the footprints, the cellar is no longer a secret.',
     hook: 'Who wanted the keeper gone?',
   })
 
   it('accepts well-formed parts', () => {
-    expect(validateOpeningParts(good(), players)).toEqual([])
+    expect(validateOpeningParts(good())).toEqual([])
   })
 
-  it("rejects a credit missing its player's name, or naming them twice", () => {
-    const missing = good()
-    missing.creditHost = 'The captain came in from the storm.'
-    expect(validateOpeningParts(missing, players).join(' ')).toMatch(/Nathan/)
-    const twice = good()
-    twice.creditGuest = 'Nate knew it; Nate always knows.'
-    expect(validateOpeningParts(twice, players).length).toBeGreaterThan(0)
+  it('requires "the host" in creditHost and "the guest" in creditGuest', () => {
+    const noHost = good()
+    noHost.creditHost = 'The captain came in from the storm.'
+    expect(validateOpeningParts(noHost).join(' ')).toMatch(/creditHost.*the host/)
+    const noGuest = good()
+    noGuest.creditGuest = 'Someone followed the footprints.'
+    expect(validateOpeningParts(noGuest).join(' ')).toMatch(/creditGuest.*the guest/)
   })
 
-  it("rejects a credit that names the other player", () => {
+  it('rejects a credit that mentions the other seat', () => {
     const crossed = good()
-    crossed.creditHost = 'Because Nathan and Nate argued, the door stood open.'
-    expect(validateOpeningParts(crossed, players).join(' ')).toMatch(/Nate/)
-  })
-
-  it('does not confuse names that share letters (Nate inside Nathan)', () => {
-    // "Nathan" contains "Nat", not the word "Nate": the host credit is still fine.
-    expect(validateOpeningParts(good(), players)).toEqual([])
+    crossed.creditHost = 'Because the host and the guest argued, the door stood open.'
+    expect(validateOpeningParts(crossed).join(' ')).toMatch(/creditHost.*the guest/)
   })
 
   it('rejects a hook that does not end with "?"', () => {
     const flat = good()
     flat.hook = 'Someone here is lying.'
-    expect(validateOpeningParts(flat, players).join(' ')).toMatch(/\?/)
+    expect(validateOpeningParts(flat).join(' ')).toMatch(/\?/)
   })
 
   it('rejects parts over their word caps, and graphic terms', () => {
     const long = good()
     long.scene = Array.from({ length: 60 }, () => 'fog').join(' ')
-    expect(validateOpeningParts(long, players).join(' ')).toMatch(/scene/i)
+    expect(validateOpeningParts(long).join(' ')).toMatch(/scene/i)
     const graphic = good()
-    graphic.creditGuest = 'Because Nate found blood on the stairs, the cellar matters.'
-    expect(validateOpeningParts(graphic, players).join(' ')).toMatch(/graphic/i)
+    graphic.creditGuest = 'Because the guest found blood on the stairs, the cellar matters.'
+    expect(validateOpeningParts(graphic).join(' ')).toMatch(/graphic/i)
+  })
+})
+
+describe('the player-name guard (R39)', () => {
+  const names = ['Nathan Wunderlich', 'Nate Wunderlich']
+
+  it('rejects a case whose text contains any token of a player name, and says so without the name', () => {
+    for (const token of ['Nathan', 'Nate', 'Wunderlich', 'WUNDERLICH']) {
+      const c = validCase()
+      c.suspects[0] = { ...c.suspects[0], name: `Captain ${token}` }
+      const result = validateCase(c, { playerNames: names })
+      expect(result.ok, token).toBe(false)
+      // The errors go back to the AI on a retry, so they must never contain the name itself.
+      if (!result.ok) {
+        expect(result.errors.join(' ')).toMatch(/player's name/i)
+        expect(result.errors.join(' ').toLowerCase()).not.toContain(token.toLowerCase())
+      }
+    }
+  })
+
+  it('checks the opening parts, title, and victim too', () => {
+    const inParts = validCase()
+    inParts.openingParts.scene = 'Nathan watches the storm.'
+    expect(validateCase(inParts, { playerNames: names }).ok).toBe(false)
+    const inTitle = validCase()
+    inTitle.title = 'The Wunderlich Affair'
+    expect(validateCase(inTitle, { playerNames: names }).ok).toBe(false)
+  })
+
+  it('matches whole words only: "Natalie" is not "Nate" or "Nathan"', () => {
+    const c = validCase()
+    c.suspects[0] = { ...c.suspects[0], name: 'Natalie Crane' }
+    expect(validateCase(c, { playerNames: names }).ok).toBe(true)
   })
 })
 
@@ -309,10 +336,10 @@ describe('buildQuestionPrompt', () => {
 
 describe('buildCasePrompt', () => {
   const answers = [
-    { player: 'Nathan', question: 'What went wrong on the ship?', answer: 'The lights failed' },
-    { player: 'Nathan', question: 'Who was acting strangely?', answer: 'The navigator' },
-    { player: 'Nate', question: 'Where was the victim last seen?', answer: 'The cargo bay' },
-    { player: 'Nate', question: 'What were they arguing about?', answer: 'Fuel rations' },
+    { seat: 'host' as const, question: 'What went wrong on the ship?', answer: 'The lights failed' },
+    { seat: 'host' as const, question: 'Who was acting strangely?', answer: 'The navigator' },
+    { seat: 'guest' as const, question: 'Where was the victim last seen?', answer: 'The cargo bay' },
+    { seat: 'guest' as const, question: 'What were they arguing about?', answer: 'Fuel rations' },
   ]
   const earlierTitles = ['The Silent Hatch', 'Orbit of Lies']
 
@@ -336,20 +363,19 @@ describe('buildCasePrompt', () => {
     expect(text).toContain("The title must not repeat the setting's name.")
   })
 
-  it("pairs each answer with its player's name, and asks the opening to credit them (R37)", () => {
+  it('labels each choice by seat ("the host:" / "the guest:") and never carries a player name (R39)', () => {
     const text = Object.values(buildCasePrompt(setting, answers, [])).join(' ')
-    expect(text).toContain('Nathan: What went wrong on the ship? -> The lights failed')
-    expect(text).toContain('Nate: What were they arguing about? -> Fuel rations')
-    expect(text).toMatch(/credit/i)
-    expect(text).toMatch(/by name/i)
+    expect(text).toContain('the host: What went wrong on the ship? -> The lights failed')
+    expect(text).toContain('the guest: What were they arguing about? -> Fuel rations')
+    for (const token of ['Nathan', 'Nate', 'Wunderlich']) expect(text).not.toMatch(new RegExp(`\\b${token}\\b`, 'i'))
   })
 
   it('asks for openingParts (scene, creditHost, creditGuest, hook) and names who each credit belongs to (R38)', () => {
     const text = Object.values(buildCasePrompt(setting, answers, [])).join(' ')
     expect(text).toContain('"openingParts"')
     for (const key of ['scene', 'creditHost', 'creditGuest', 'hook']) expect(text).toContain(`"${key}"`)
-    expect(text).toMatch(/creditHost[^\n]*Nathan/)
-    expect(text).toMatch(/creditGuest[^\n]*Nate\b/)
+    expect(text).toMatch(/creditHost[^\n]*"the host"/)
+    expect(text).toMatch(/creditGuest[^\n]*"the guest"/)
     expect(text).toMatch(/ends? with "\?"/)
     expect(text).not.toContain('"openingNarration"')
   })

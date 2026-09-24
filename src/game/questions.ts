@@ -7,7 +7,7 @@
  * fails twice. Pure code: no network, no database.
  */
 
-import { findGraphicTerm } from './caseGen'
+import { containsPlayerName, findGraphicTerm, playerNameError } from './caseGen'
 import { shuffle, type Player, type Rng } from './rules'
 
 export const QUESTION_COUNT = 4
@@ -38,10 +38,18 @@ function hasDuplicates(texts: string[]): boolean {
 }
 
 /** Check one question's shape, scene beat, text, and answers. Returns a list of problems (empty if fine). */
-function checkQuestion(item: unknown, n: number): string[] {
+function checkQuestion(item: unknown, n: number, playerNames?: string[]): string[] {
   if (typeof item !== 'object' || item === null) return [`Question ${n} is not an object.`]
   const { beat, text, answers } = item as { beat?: unknown; text?: unknown; answers?: unknown }
   const errors: string[] = []
+
+  // R39: no player's name in the beat, the question, or any answer (the error never repeats it).
+  if (playerNames) {
+    const named = (value: unknown) => typeof value === 'string' && containsPlayerName(value, playerNames)
+    if (named(beat)) errors.push(playerNameError(`Question ${n}'s scene beat`))
+    if (named(text)) errors.push(playerNameError(`Question ${n}`))
+    if (Array.isArray(answers) && answers.some(named)) errors.push(playerNameError(`An answer to question ${n}`))
+  }
 
   if (typeof beat !== 'string' || beat.trim() === '') errors.push(`Question ${n} has no scene beat.`)
   else {
@@ -59,7 +67,7 @@ function checkQuestion(item: unknown, n: number): string[] {
     if (Array.isArray(answers)) {
       const leaked = answers.filter((a) => typeof a === 'string' && a.trim() && beat.toLowerCase().includes(a.trim().toLowerCase()))
       if (leaked.length >= 2) {
-        errors.push(`Question ${n}'s scene beat gives away ${leaked.length} of its answer options (${leaked.join(', ')}); it may hint at one at most.`)
+        errors.push(`Question ${n}'s scene beat gives away ${leaked.length} of its answer options; it may hint at one at most.`)
       }
     }
   }
@@ -94,13 +102,13 @@ function checkQuestion(item: unknown, n: number): string[] {
  * characters, answers up to 40; no repeated question, and no repeated answer
  * within a question.
  */
-export function validateQuestions(input: unknown): ValidationResult {
+export function validateQuestions(input: unknown, options: { playerNames?: string[] } = {}): ValidationResult {
   if (!Array.isArray(input)) return { ok: false, errors: ['Expected a list of questions.'] }
   const errors: string[] = []
   if (input.length !== QUESTION_COUNT) {
     errors.push(`Expected exactly ${QUESTION_COUNT} questions; got ${input.length}.`)
   }
-  input.forEach((item, i) => errors.push(...checkQuestion(item, i + 1)))
+  input.forEach((item, i) => errors.push(...checkQuestion(item, i + 1, options.playerNames)))
   if (errors.length === 0) {
     const questions = input as Question[]
     if (hasDuplicates(questions.map((q) => q.text))) errors.push('Two questions are the same.')

@@ -71,13 +71,23 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
       ) : (
         <>
           {questions.map((q) => (
-            <fieldset key={q.id} data-testid="question" className="space-y-2">
+            // A <fieldset>'s <legend> always renders first, which put the beat under the
+            // question (D40). A labelled group keeps the order: beat, question, answers.
+            <div
+              key={q.id}
+              role="group"
+              aria-labelledby={`question-${round.id}-${q.id}`}
+              data-testid="question"
+              className="space-y-2"
+            >
               {q.beat && (
                 <p data-testid="question-beat" className="text-sm italic leading-relaxed text-muted-foreground">
                   {q.beat}
                 </p>
               )}
-              <legend className="mb-1 font-semibold">{q.text}</legend>
+              <p id={`question-${round.id}-${q.id}`} data-testid="question-text" className="mb-1 font-semibold">
+                {q.text}
+              </p>
               <div role="radiogroup" aria-label={q.text} className="grid grid-cols-2 gap-2">
                 {q.answers.map((answer) => (
                   <button
@@ -98,7 +108,7 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
                   </button>
                 ))}
               </div>
-            </fieldset>
+            </div>
           ))}
           <Button
             data-testid="submit-answers"

@@ -15,8 +15,9 @@ const devSamples = action(async ({ params, tools }) => {
   if (!import.meta.env.DEV) refuse('Samples run only on the local dev server.')
   const setting = SETTINGS.find((s) => s.id === textParam(params, 'settingId'))
   if (!setting) refuse('Unknown setting id.')
-  const players = { host: textParam(params, 'hostName'), guest: textParam(params, 'guestName') }
-  return runSample(tools, setting, players)
+  // Fake names, only to exercise the R39 guard; they never reach a prompt.
+  const guardNames = Array.isArray(params.guardNames) ? params.guardNames.map(String) : []
+  return runSample(tools, setting, guardNames)
 })
 
 export const devActions: Record<string, ActionHandler<Env>> = { devSamples }

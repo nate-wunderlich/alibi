@@ -157,6 +157,28 @@ describe('scene beats (R37)', () => {
     if (!result.ok) expect(result.errors.join(' ')).toMatch(/question below/i)
   })
 
+  it("rejects a player-name token in a beat, question, or answer, without echoing the name (R39)", () => {
+    const names = ['Nathan Wunderlich', 'Nate Wunderlich']
+    const places: ((q: Question[]) => void)[] = [
+      (q) => (q[0] = { ...q[0], beat: 'You watch Nathan pace the deck.' }),
+      (q) => (q[1] = { ...q[1], text: 'Who was acting strangely around Nate?' }),
+      (q) => (q[2] = { ...q[2], answers: ['The deck', 'The Wunderlich cabin', 'The cabin', 'The hold'] }),
+    ]
+    for (const place of places) {
+      const set = validSet()
+      place(set)
+      const result = validateQuestions(set, { playerNames: names })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.join(' ')).toMatch(/player's name/i)
+        expect(result.errors.join(' ')).not.toMatch(/Nathan|Nate|Wunderlich/i)
+      }
+    }
+    const natalie = validSet()
+    natalie[0] = { ...natalie[0], beat: 'You watch Natalie pace the deck.' }
+    expect(validateQuestions(natalie, { playerNames: names }).ok).toBe(true)
+  })
+
   it('applies the tone guard to beats', () => {
     const graphic = validSet()
     graphic[0] = { ...graphic[0], beat: 'You find blood on the stairs.' }
