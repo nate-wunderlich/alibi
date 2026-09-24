@@ -121,7 +121,8 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   await expect(alice.page.getByTestId('join-code-input')).toBeVisible({ timeout: 15_000 })
   await measure(alice.page, 'home (signed in)', testInfo)
 
-  // Lobby, as host and as guest, with the questions showing.
+  // Lobby (R47: one question at a time), as host and as guest: question 1, question 2, my picks,
+  // locked in; then the host with Start enabled. Answered through the real buttons.
   await bob.page.goto('/home')
   const created = await mustCall<{ gameId: string; code: string; roundId: string; userId: string }>(alice.page, 'createGame', {
     bestOf: 3,
@@ -134,13 +135,30 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   ] as const) {
     await u.page.goto(gameUrl(gameId))
     await expect(u.page.getByTestId('lobby')).toBeVisible({ timeout: 15_000 })
-    await expect(u.page.getByTestId('question')).toHaveCount(2, { timeout: 30_000 })
-    await measure(u.page, `lobby (${who})`, testInfo)
+    const questions = u.page.getByTestId('question')
+    await expect(questions).toHaveCount(2, { timeout: 30_000 })
+    await expect(questions.nth(0)).toBeVisible()
+    await measure(u.page, `lobby (${who}): question 1`, testInfo)
+    await snap(u.page, `lobby-${who}-q1`, testInfo)
+    await questions.nth(0).getByTestId('answer-option').first().click()
+    await expect(questions.nth(1)).toBeVisible()
+    await measure(u.page, `lobby (${who}): question 2`, testInfo)
+    await snap(u.page, `lobby-${who}-q2`, testInfo)
+    await questions.nth(1).getByTestId('answer-option').first().click()
+    await expect(u.page.getByTestId('submit-answers')).toBeVisible()
+    await measure(u.page, `lobby (${who}): my picks`, testInfo)
+    await snap(u.page, `lobby-${who}-picks`, testInfo)
+    await u.page.getByTestId('submit-answers').click()
+    await expect(u.page.getByTestId('my-answers')).toBeVisible({ timeout: 15_000 })
+    await measure(u.page, `lobby (${who}): locked in`, testInfo)
+    await snap(u.page, `lobby-${who}-locked`, testInfo)
   }
+  await alice.page.goto(gameUrl(gameId))
+  await expect(alice.page.getByTestId('start-series')).toBeEnabled({ timeout: 15_000 })
+  await measure(alice.page, 'lobby (host): start enabled', testInfo)
+  await snap(alice.page, 'lobby-host-start', testInfo)
 
   // Start the series; work out who is on turn and the envelope.
-  await answerMyQuestions(alice.page, created.roundId, gameId)
-  await answerMyQuestions(bob.page, created.roundId, gameId)
   await mustCall(alice.page, 'startSeries', { gameId })
   const roundId = created.roundId
   const a = await readRound(alice.page, roundId, gameId)
@@ -226,14 +244,20 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   await snap(starter.page, 'dialog-cast-detail', testInfo)
   await starter.page.keyboard.press('Escape')
 
-  // Reveal: the starter accuses wrongly, so the other player wins round 1.
+  // Reveal (R47: steps): the starter accuses wrongly, so the other player wins round 1.
   const wrongSuspect = [...sv.kindOf.entries()].find(([id, k]) => k === 'suspect' && id !== envelope.suspect)![0]
   const accused = await mustCall<{ nextRoundId: string }>(starter.page, 'accuse', { roundId, ...envelope, suspect: wrongSuspect })
   await alice.page.goto(gameUrl(gameId))
   await expect(alice.page.getByTestId('reveal')).toBeVisible({ timeout: 15_000 })
-  await measure(alice.page, 'reveal', testInfo)
+  for (const step of ['verdict', 'confession', 'hands', 'next'] as const) {
+    await alice.page.getByTestId(`step-${step}`).click()
+    await expect(alice.page.getByTestId(`steppanel-${step}`)).toBeVisible({ timeout: 15_000 })
+    if (step === 'next') await expect(alice.page.getByTestId('question').first()).toBeVisible({ timeout: 30_000 })
+    await measure(alice.page, `reveal: ${step}`, testInfo)
+    await snap(alice.page, `reveal-${step}`, testInfo)
+  }
 
-  // Series end: round 2 (the other player starts), and they accuse correctly: 2-0.
+  // Series end (R47: steps): round 2 (the other player starts), and they accuse correctly: 2-0.
   await answerMyQuestions(alice.page, accused.nextRoundId, gameId)
   await answerMyQuestions(bob.page, accused.nextRoundId, gameId)
   await mustCall(alice.page, 'nextRound', { gameId })
@@ -242,7 +266,12 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   await mustCall(other.page, 'accuse', { roundId: accused.nextRoundId, ...envelopeOf(a2, b2) })
   await alice.page.goto(gameUrl(gameId))
   await expect(alice.page.getByTestId('series-end')).toBeVisible({ timeout: 15_000 })
-  await measure(alice.page, 'series end', testInfo)
+  for (const step of ['result', 'verdict', 'confession', 'hands'] as const) {
+    await alice.page.getByTestId(`step-${step}`).click()
+    await expect(alice.page.getByTestId(`steppanel-${step}`)).toBeVisible({ timeout: 15_000 })
+    await measure(alice.page, `series end: ${step}`, testInfo)
+    await snap(alice.page, `series-end-${step}`, testInfo)
+  }
 
   await testInfo.attach('no-scroll-results', { body: JSON.stringify(results, null, 2), contentType: 'application/json' })
   const { writeFileSync } = await import('node:fs')

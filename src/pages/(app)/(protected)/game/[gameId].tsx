@@ -16,23 +16,27 @@ export default function GamePage() {
   const { game, round, mySeat } = view
 
   let body
-  let isTable = false
+  // R47: the table, the reveal, and the series end fill the screen above their own bottom bars.
+  let fill = false
   if (view.loading) body = <Skeleton />
   else if (!game || !mySeat) body = <NotYours />
   else if (game.status === 'lobby') body = <Lobby view={view} />
-  else if (game.status === 'finished') body = <SeriesEnd view={view} />
-  else if (!round || (round.status !== 'playing' && round.status !== 'revealed')) body = <Preparing />
-  else if (round.status === 'revealed') body = <Reveal view={view} round={round} />
-  else {
+  else if (game.status === 'finished') {
+    body = <SeriesEnd view={view} />
+    fill = true
+  } else if (!round || (round.status !== 'playing' && round.status !== 'revealed')) body = <Preparing />
+  else if (round.status === 'revealed') {
+    body = <Reveal view={view} round={round} />
+    fill = true
+  } else {
     body = <Table view={view} round={round} />
-    isTable = true
+    fill = true
   }
 
-  // R47: the table fills the screen between the header and its own bottom tab bar; it never scrolls.
-  if (isTable) {
+  if (fill) {
     return <div className="mx-auto flex h-full w-full max-w-[480px] flex-col px-3 pt-2 text-foreground">{body}</div>
   }
-  return <div className="mx-auto w-full max-w-[480px] px-4 py-6 text-foreground">{body}</div>
+  return <div className="mx-auto w-full max-w-[480px] px-4 py-3 text-foreground">{body}</div>
 }
 
 /** Loading placeholder shaped like the score and case header. */

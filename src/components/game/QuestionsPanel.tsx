@@ -14,7 +14,7 @@ import { useQuery } from 'deepspace'
 import { Button } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { useAction } from '@/lib/actions'
-import { FileLabel, InlineError } from './CardView'
+import { InlineError } from './CardView'
 import type { GameView, Round, StoredAnswer, StoredQuestion } from './useGameData'
 
 /** Whether each seat has locked in its answers for a round. */
@@ -38,8 +38,15 @@ export function WritingCase() {
   )
 }
 
+/**
+ * R47: one question at a time ("Question 1 of 2"); tapping an answer moves on,
+ * Back goes to the previous one. After the last, a one-line summary of my
+ * picks and Lock in. Both questions stay in the page (the one not in view is
+ * hidden), so they arrive live together (D19) and keep their order (D40).
+ */
 export function QuestionsPanel({ view, round }: { view: GameView; round: Round }) {
   const [picks, setPicks] = useState<Record<string, string>>({})
+  const [step, setStep] = useState(0)
   const submit = useAction()
   const { iAnswered, opponentAnswered } = answeredFlags(view, round)
   // Only my own rows arrive (owner-only; R29).
@@ -48,21 +55,15 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
   const questions: StoredQuestion[] = questionRows.records[0] ? JSON.parse(questionRows.records[0].data.questions) : []
   const myAnswers: StoredAnswer[] = answerRows.records[0] ? JSON.parse(answerRows.records[0].data.answers) : []
   const complete = questions.length > 0 && questions.every((q) => picks[q.id])
+  const summary = questions.length > 0 && step >= questions.length
 
   return (
-    <div data-testid="questions-panel" className="space-y-3">
-      <FileLabel>Your questions for the next case</FileLabel>
-
+    <div data-testid="questions-panel" className="space-y-2">
       {iAnswered ? (
-        <ul data-testid="my-answers" className="space-y-2">
-          {myAnswers.map((a) => (
-            <li key={a.questionId} className="rounded-sm border border-border bg-card px-3 py-2 text-sm">
-              <div className="text-muted-foreground">{a.question}</div>
-              <div className="font-semibold">{a.answer}</div>
-            </li>
-          ))}
-          <li className="font-mono text-[11px] uppercase tracking-widest text-primary">Locked in</li>
-        </ul>
+        <div data-testid="my-answers" className="rounded-sm border border-border bg-card px-3 py-2 text-sm">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-primary">Locked in</span>{' '}
+          <span className="font-semibold">{myAnswers.map((a) => a.answer).join(' · ')}</span>
+        </div>
       ) : questions.length === 0 ? (
         <div aria-busy="true" className="space-y-2">
           <div className="h-16 animate-pulse rounded-sm bg-muted" />
@@ -70,7 +71,17 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
         </div>
       ) : (
         <>
-          {questions.map((q) => (
+          <div className="flex items-center justify-between">
+            <p data-testid="question-step" className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {summary ? 'Your picks' : `Question ${step + 1} of ${questions.length}`}
+            </p>
+            {step > 0 && (
+              <Button data-testid="question-back" variant="link" className="h-auto px-0 text-sm" onClick={() => setStep(step - 1)}>
+                Back
+              </Button>
+            )}
+          </div>
+          {questions.map((q, i) => (
             // A <fieldset>'s <legend> always renders first, which put the beat under the
             // question (D40). A labelled group keeps the order: beat, question, answers.
             <div
@@ -78,6 +89,7 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
               role="group"
               aria-labelledby={`question-${round.id}-${q.id}`}
               data-testid="question"
+              hidden={i !== step}
               className="space-y-2"
             >
               {q.beat && (
@@ -85,7 +97,7 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
                   {q.beat}
                 </p>
               )}
-              <p id={`question-${round.id}-${q.id}`} data-testid="question-text" className="mb-1 font-semibold">
+              <p id={`question-${round.id}-${q.id}`} data-testid="question-text" className="font-semibold">
                 {q.text}
               </p>
               <div role="radiogroup" aria-label={q.text} className="grid grid-cols-2 gap-2">
@@ -96,7 +108,10 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
                     role="radio"
                     aria-checked={picks[q.id] === answer}
                     data-testid="answer-option"
-                    onClick={() => setPicks({ ...picks, [q.id]: answer })}
+                    onClick={() => {
+                      setPicks({ ...picks, [q.id]: answer })
+                      setStep(i + 1)
+                    }}
                     className={cn(
                       'rounded-sm border px-3 py-2 text-left text-sm transition-colors',
                       picks[q.id] === answer
@@ -110,21 +125,28 @@ export function QuestionsPanel({ view, round }: { view: GameView; round: Round }
               </div>
             </div>
           ))}
-          <Button
-            data-testid="submit-answers"
-            className="w-full"
-            disabled={!complete}
-            loading={submit.pending}
-            onClick={() =>
-              submit.run('submitAnswers', {
-                roundId: round.id,
-                answers: questions.map((q) => ({ questionId: q.id, answer: picks[q.id] })),
-              })
-            }
-          >
-            Lock in my answers
-          </Button>
-          <InlineError message={submit.error} />
+          {summary && (
+            <div className="space-y-2">
+              <p data-testid="my-picks" className="truncate text-sm font-semibold">
+                {questions.map((q) => picks[q.id]).join(' · ')}
+              </p>
+              <Button
+                data-testid="submit-answers"
+                className="w-full"
+                disabled={!complete}
+                loading={submit.pending}
+                onClick={() =>
+                  submit.run('submitAnswers', {
+                    roundId: round.id,
+                    answers: questions.map((q) => ({ questionId: q.id, answer: picks[q.id] })),
+                  })
+                }
+              >
+                Lock in my answers
+              </Button>
+              <InlineError message={submit.error} />
+            </div>
+          )}
         </>
       )}
 
