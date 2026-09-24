@@ -169,3 +169,22 @@ describe('askForAlibis (R43: card by card)', () => {
     expect(texts.filter((t) => t !== null)).toHaveLength(11)
   })
 })
+
+describe('askForCase with avoid-names (R44)', () => {
+  const setting = SETTINGS[1]
+  // caseReply() names its suspects "Suspect 1".."Suspect 4": avoid "Suspect" by listing one.
+  it('rejects a repeated name on attempts 1-2 and accepts it on the final attempt', async () => {
+    const { tools, requests } = fakeModel([caseReply(), caseReply(), caseReply()])
+    const result = await askForCase(tools, 'case', setting, [], [], [], { avoidNames: ['Old Suspect'] })
+    expect(requests).toHaveLength(3)
+    expect(result).not.toBeNull()
+    expect(requests[1].messages.at(-1)?.content).toMatch(/Suspect 1/)
+  })
+
+  it('sends the twist in the prompt', async () => {
+    const { tools, requests } = fakeModel([caseReply()])
+    await askForCase(tools, 'case', setting, [], [], [], { twist: 'a sudden blackout' })
+    expect(JSON.stringify(requests[0])).toContain('a sudden blackout')
+  })
+})
+

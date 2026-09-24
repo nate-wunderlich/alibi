@@ -25,6 +25,9 @@ import { loadAllTestAccounts, newSignedInContext } from 'deepspace/testing'
 const BASE = `http://localhost:${process.env.DEEPSPACE_PORT ?? 5173}`
 const positional = process.argv.slice(2)
 const FAKE_NAMES = ['Alex Rivera', 'Sam Porter']
+// R44: names seen live, passed as "earlier cases" so the avoid-names rule is exercised.
+const FAKE_AVOID = ['Marcus Webb', 'Dr. Vex', 'Iris Thorne', 'Captain Reeves']
+let repeats = 0
 const fakeTokens = FAKE_NAMES.flatMap((n) => n.split(/\s+/)).filter((t) => t.length >= 3)
 let leaks = 0
 
@@ -70,7 +73,7 @@ for (const settingId of ids) {
       })
       return r.json()
     },
-    { settingId, guardNames: FAKE_NAMES },
+    { settingId, guardNames: FAKE_NAMES, avoidNames: FAKE_AVOID },
   )
   console.log(`\n==================== ${settingId} ====================`)
   if (!res.success) {
@@ -87,6 +90,10 @@ for (const settingId of ids) {
     console.log(`   ${q.text}  -> tapped "${q.answers[1]}"`)
   })
   console.log(`\nCASE: "${s.caseTitle}" · victim: ${s.victim}`)
+  console.log(`TWIST: ${s.twist}`)
+  console.log(`SUSPECTS: ${s.suspects.join(' | ')}`)
+  if (s.repeatedNames.length) repeats++
+  console.log(`names repeated from the avoid list: ${s.repeatedNames.length ? s.repeatedNames.join(', ') : 'none'}`)
   console.log(`\nOPENING (${words(s.openingNarration)} words, ${s.openingNarration.length} chars):\n${s.openingNarration}`)
   console.log(`\nALIBIS (${s.alibis.filter((a) => a.byAi).length} of ${s.alibis.length} written by the AI; the rest are templates):`)
   for (const a of s.alibis) console.log(`  [${a.kind}] ${a.card} (${a.byAi ? 'AI' : 'template'}, ${words(a.text)} words): ${a.text}`)
@@ -106,5 +113,6 @@ console.log(`questions:  ${rate('questions')}`)
 console.log(`case:       ${rate('case')}`)
 console.log(`alibis:     ${rate('alibis')}`)
 console.log(`confession: ${rate('confession')}`)
+console.log(`avoid list: ${FAKE_AVOID.join('; ')}; samples with a repeated name: ${repeats}`)
 console.log(`name leaks: ${leaks === 0 ? 'none in any sample' : `${leaks} sample(s) contain a fake-name token`}`)
 if (failures || leaks) process.exit(1)

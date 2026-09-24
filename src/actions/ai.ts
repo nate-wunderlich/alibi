@@ -20,7 +20,8 @@ import type { Setting } from '../game/settings'
 
 export const AI_MODEL = 'claude-haiku-4-5'
 
-type Check<T> = (value: unknown) => { ok: true; value: T } | { ok: false; errors: string[] }
+/** A reply check; `attempt` (1-based) lets a check relax on the final call (R44). */
+type Check<T> = (value: unknown, attempt: number) => { ok: true; value: T } | { ok: false; errors: string[] }
 
 /** The text of an Anthropic Messages response, or '' if there is none. */
 function replyText(data: unknown): string {
@@ -110,7 +111,7 @@ export async function askForJson<T>(
     }
     const substituted = substituteNames(parsed, playerNames)
     if (substituted !== parsed) console.info(`[ai] ${label}: call ${attempt}: replaced a player-name collision in code (R40)`)
-    const checked = check(substituted)
+    const checked = check(substituted, attempt)
     if (checked.ok) {
       console.info(`[ai] ${label}: ok on call ${attempt}`)
       report?.({ attempts: attempt, ok: true })
@@ -132,7 +133,8 @@ export const CASE_ATTEMPTS = 3
 
 /**
  * The case path, shared by openRound and the sample command: the case
- * prompt, name substitution, validation, and up to CASE_ATTEMPTS calls.
+ * prompt (with R44's avoid-names and twist), name substitution, validation,
+ * and up to CASE_ATTEMPTS calls; the last one accepts a repeated name.
  * Returns null if every call failed (the caller then uses the preset case).
  */
 export function askForCase(
@@ -142,14 +144,26 @@ export function askForCase(
   answers: AnsweredQuestion[],
   earlierTitles: string[],
   playerNames: string[],
-  report?: AskOptions['report'],
+  options: {
+    report?: AskOptions['report']
+    /** R44 (2): names from the players' earlier cases; a repeat is accepted only on the final attempt. */
+    avoidNames?: string[]
+    /** R44 (3): the round's complication, which the case must use. */
+    twist?: string
+  } = {},
 ): Promise<PresetCase | null> {
+  const { report, avoidNames = [], twist } = options
   return askForJson<PresetCase>(
     tools,
     label,
-    buildCasePrompt(setting, answers, earlierTitles),
-    (value) => {
-      const checked = validateCase(value, { settingName: setting.name, playerNames })
+    buildCasePrompt(setting, answers, earlierTitles, { avoidNames, twist }),
+    (value, attempt) => {
+      const checked = validateCase(value, {
+        settingName: setting.name,
+        playerNames,
+        avoidNames,
+        allowRepeatNames: attempt >= CASE_ATTEMPTS,
+      })
       return checked.ok ? { ok: true, value: checked.case } : checked
     },
     2000,

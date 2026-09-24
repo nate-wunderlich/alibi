@@ -117,14 +117,27 @@ export const SETTINGS: readonly Setting[] = [
   },
 ]
 
+/** One earlier play of a setting, by either player (R44): when its round was created, in ms. */
+export interface SettingPlay {
+  settingId: string
+  playedAt: number
+}
+
 /**
- * Pick a random setting that this series has not used yet.
+ * Pick a setting that this series has not used yet (R44): the one the
+ * players have played least recently, judged by each setting's most recent
+ * play in `history` (never played counts as least recent), ties at random.
+ * With no history this is a random unused setting, as before.
  * Throws if all 12 are used (a best-of-7 series needs at most 7).
  */
-export function pickSetting(usedIds: readonly string[], rng: Rng): Setting {
+export function pickSetting(usedIds: readonly string[], rng: Rng, history: readonly SettingPlay[] = []): Setting {
   const unused = SETTINGS.filter((s) => !usedIds.includes(s.id))
   if (unused.length === 0) {
     throw new Error('All 12 settings have already been used in this series.')
   }
-  return unused[randomIndex(unused.length, rng)]
+  const lastPlayed = (id: string) =>
+    history.reduce((latest, h) => (h.settingId === id && h.playedAt > latest ? h.playedAt : latest), -Infinity)
+  const oldest = Math.min(...unused.map((s) => lastPlayed(s.id)))
+  const candidates = unused.filter((s) => lastPlayed(s.id) === oldest)
+  return candidates[randomIndex(candidates.length, rng)]
 }

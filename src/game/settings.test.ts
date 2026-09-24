@@ -66,3 +66,45 @@ describe('pickSetting', () => {
     expect(() => pickSetting(ALL_IDS, seededRng(1))).toThrow(/all 12 settings/i)
   })
 })
+
+describe('pickSetting with a play history (R44)', () => {
+  // History: when each setting was last played by either player (ms timestamps; larger = more recent).
+  const played = (entries: [number, number][]) => entries.map(([i, at]) => ({ settingId: ALL_IDS[i], playedAt: at }))
+
+  it('returns the least recently played setting', () => {
+    // Every setting played; setting 5 longest ago.
+    const history = played(ALL_IDS.map((_, i) => [i, i === 5 ? 100 : 1000 + i] as [number, number]))
+    for (let seed = 1; seed <= 20; seed++) expect(pickSetting([], seededRng(seed), history).id).toBe(ALL_IDS[5])
+  })
+
+  it('treats a never-played setting as least recent', () => {
+    const history = played(ALL_IDS.map((_, i) => [i, 1000 + i] as [number, number]).filter(([i]) => i !== 8))
+    expect(pickSetting([], seededRng(3), history).id).toBe(ALL_IDS[8])
+  })
+
+  it('uses each setting\'s most recent play, by either player', () => {
+    // Setting 0 was played long ago AND recently: its recent play counts; setting 1 is then the oldest.
+    const history = played([
+      ...ALL_IDS.map((_, i) => [i, 5000 + i] as [number, number]),
+      [0, 10],
+      [1, 20],
+    ]).filter((h) => !(h.settingId === ALL_IDS[1] && h.playedAt > 1000))
+    expect(pickSetting([], seededRng(1), history).id).toBe(ALL_IDS[1])
+  })
+
+  it('never returns a setting already in this series, even if it is the least recent', () => {
+    const history = played(ALL_IDS.map((_, i) => [i, i === 2 ? 1 : 1000 + i] as [number, number]))
+    const picked = pickSetting([ALL_IDS[2]], seededRng(1), history)
+    expect(picked.id).not.toBe(ALL_IDS[2])
+    expect(picked.id).toBe(ALL_IDS[0])
+  })
+
+  it('picks at random among ties', () => {
+    // Settings 3, 6, and 9 were never played; the rest recently.
+    const history = played(ALL_IDS.map((_, i) => [i, 1000 + i] as [number, number]).filter(([i]) => ![3, 6, 9].includes(i)))
+    const seen = new Set<string>()
+    for (let seed = 1; seed <= 200; seed++) seen.add(pickSetting([], seededRng(seed), history).id)
+    expect([...seen].sort()).toEqual([ALL_IDS[3], ALL_IDS[6], ALL_IDS[9]].sort())
+  })
+})
+

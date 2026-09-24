@@ -58,6 +58,8 @@ export interface RoundData {
   /** R41: completed turns, and the alibis drawn so far (JSON list of RevealedAlibi). */
   turnsPlayed: number
   revealedAlibis: string
+  /** R44: the round's complication (flavor, not a clue). */
+  twist: string
 }
 
 /** R41: an alibi drawn during play: the card it clears and why. */

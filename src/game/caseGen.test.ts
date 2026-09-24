@@ -7,8 +7,11 @@ import {
   CARD_NAME_MAX,
   findGraphicTerm,
   GRAPHIC_TERMS,
+  avoidNameList,
+  drawTwist,
   NARRATION_MAX,
   playerNameTokens,
+  TWISTS,
   substituteNames,
   validateCase,
   validateOpeningParts,
@@ -473,3 +476,86 @@ describe('buildCasePrompt', () => {
     expect(text).toMatch(/only one/)
   })
 })
+
+describe('variety: names not to reuse (R44)', () => {
+  const avoid = ['Marcus Chen', 'Dr. Lena Webb', 'Dr. Vex', 'Iris Thorne', 'Captain Reeves']
+  const withSuspect = (name: string) => {
+    const c = validCase()
+    c.suspects[0] = { name, description: 'Owed the engineer a favor.' }
+    return c
+  }
+
+  it('rejects "Marcus Webb" when "Marcus Chen" or "Dr. Lena Webb" is in the list, and names it', () => {
+    for (const list of [['Marcus Chen'], ['Dr. Lena Webb']]) {
+      const result = validateCase(withSuspect('Marcus Webb'), { avoidNames: list })
+      expect(result.ok, list[0]).toBe(false)
+      if (!result.ok) expect(result.errors.join(' ')).toMatch(/Marcus Webb/)
+    }
+  })
+
+  it('checks the victim too, by the name before any comma', () => {
+    const c = validCase()
+    c.victim = 'Iris Vale, the station archivist'
+    expect(validateCase(c, { avoidNames: avoid }).ok).toBe(false)
+  })
+
+  it('ignores titles: "Captain Reeves" blocks "Reeves", not every captain', () => {
+    expect(validateCase(withSuspect('Captain Ada Morrow'), { avoidNames: avoid }).ok).toBe(true)
+    expect(validateCase(withSuspect('Nell Reeves'), { avoidNames: avoid }).ok).toBe(false)
+  })
+
+  it('ignores ship and station roles too (D55 e2e: every "Quartermaster" and "First Mate" was rejected)', () => {
+    const earlier = ['Quartermaster Roland Vex', 'First Mate Harlow Quill', 'Bosun Ada Pike', 'Navigator Tomas Reed']
+    for (const name of ['Quartermaster Devon Cross', 'First Mate Silas Blackwood', 'Bosun Lio Marsh', 'Navigator Juno Hale']) {
+      expect(validateCase(withSuspect(name), { avoidNames: earlier }).ok, name).toBe(true)
+    }
+    expect(validateCase(withSuspect('Quartermaster Nia Vex'), { avoidNames: earlier }).ok).toBe(false)
+  })
+
+  it('accepts unrelated names', () => {
+    expect(validateCase(withSuspect('Tobias Grell'), { avoidNames: avoid }).ok).toBe(true)
+    expect(validateCase(validCase(), { avoidNames: avoid }).ok).toBe(true)
+  })
+
+  it('on the final attempt, accepts a repeat rather than falling back', () => {
+    expect(validateCase(withSuspect('Marcus Webb'), { avoidNames: avoid, allowRepeatNames: true }).ok).toBe(true)
+  })
+
+  it('the avoid list never carries a player name (R39), and has no duplicates', () => {
+    const list = avoidNameList(['Marcus Webb', 'Nate Harlow', 'Marcus Webb', 'Iris Thorne'], ['Nate Wunderlich'])
+    expect(list).toEqual(['Marcus Webb', 'Iris Thorne'])
+  })
+})
+
+describe('variety: a twist per round (R44)', () => {
+  it('has at least 12 twists, all different', () => {
+    expect(TWISTS.length).toBeGreaterThanOrEqual(12)
+    expect(new Set(TWISTS).size).toBe(TWISTS.length)
+  })
+
+  it('drawTwist returns one from the list, chosen by the rng', () => {
+    expect(drawTwist(() => 0)).toBe(TWISTS[0])
+    expect(drawTwist(() => 0.9999)).toBe(TWISTS[TWISTS.length - 1])
+    for (let i = 0; i < 50; i++) expect(TWISTS).toContain(drawTwist(Math.random))
+  })
+})
+
+describe('buildCasePrompt with variety (R44)', () => {
+  it('includes the names not to use and requires the twist', () => {
+    const twist = TWISTS[3]
+    const text = Object.values(
+      buildCasePrompt(setting, [], [], { avoidNames: ['Marcus Webb', 'Dr. Vex'], twist }),
+    ).join('\n')
+    expect(text).toContain('Marcus Webb')
+    expect(text).toContain('Dr. Vex')
+    expect(text).toMatch(/do not use/i)
+    expect(text).toContain(twist)
+    expect(text).toMatch(/must use this complication/i)
+  })
+
+  it('says nothing about avoided names when the list is empty', () => {
+    const text = Object.values(buildCasePrompt(setting, [], [])).join('\n')
+    expect(text).not.toMatch(/names already used/i)
+  })
+})
+

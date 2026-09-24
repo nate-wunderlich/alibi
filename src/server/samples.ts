@@ -9,7 +9,7 @@
 
 import { askForAlibis, askForCase, askForJson, type IntegrationCaller } from '../actions/ai'
 import { alibiOrder, templateAlibi } from '../game/alibis'
-import { buildQuestionPrompt, type AnsweredQuestion } from '../game/caseGen'
+import { avoidNameList, buildQuestionPrompt, drawTwist, nameTokens, type AnsweredQuestion } from '../game/caseGen'
 import { PRESET_CASE, type PresetCase } from '../game/presetCase'
 import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet } from '../game/questions'
 import type { Setting } from '../game/settings'
@@ -28,6 +28,9 @@ export interface SampleResult {
   openingNarration: string
   solution: { culprit: string; method: string; place: string }
   confession: string
+  /** R44: the round's complication, and any victim or suspect name repeated from the avoid list. */
+  twist: string
+  repeatedNames: string[]
   /** R41, R43: the 12 alibis, one per card, as the 'alibis' job would write them (byAi: false = the template). */
   alibis: { kind: string; card: string; text: string; byAi: boolean }[]
 }
@@ -50,7 +53,16 @@ function tracker() {
  * "Sam Porter"): they only exercise the R39 guard and R40 substitution, exactly as the game passes
  * real names to it. They never go into a prompt.
  */
-export async function runSample(tools: IntegrationCaller, setting: Setting, guardNames: string[]): Promise<SampleResult> {
+export async function runSample(
+  tools: IntegrationCaller,
+  setting: Setting,
+  guardNames: string[],
+  avoidInput: string[] = [],
+): Promise<SampleResult> {
+  // R44: the names to avoid (FAKE, from the script) and a drawn twist, as openRound passes them.
+  const avoidNames = avoidNameList(avoidInput, guardNames)
+  const twist = drawTwist(Math.random)
+
   // 1. Questions, exactly as prepareRound asks for them (fallback: the generic bank).
   const q = tracker()
   const questions =
@@ -75,7 +87,8 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
   // 3. The case, exactly as openRound asks for it (fallback: the preset case).
   const c = tracker()
   const theCase: PresetCase =
-    (await askForCase(tools, `sample case (${setting.id})`, setting, answers, [], guardNames, c.report)) ?? PRESET_CASE
+    (await askForCase(tools, `sample case (${setting.id})`, setting, answers, [], guardNames, { report: c.report, avoidNames, twist })) ??
+    PRESET_CASE
 
   // 3b. The alibis, as the 'alibis' job asks for them, card by card (R43): null keeps the template.
   const a = tracker()
@@ -110,6 +123,10 @@ export async function runSample(tools: IntegrationCaller, setting: Setting, guar
   return {
     setting: setting.name,
     steps: { questions: q.outcome, case: c.outcome, alibis: a.outcome, confession: k.outcome },
+    twist,
+    repeatedNames: [theCase.victim, ...theCase.cards.filter((card) => card.kind === 'suspect').map((card) => card.name)].filter(
+      (name) => nameTokens(name).some((t) => avoidNames.flatMap(nameTokens).includes(t)),
+    ),
     questions,
     answers,
     caseTitle: theCase.title,

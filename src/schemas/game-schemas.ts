@@ -109,6 +109,8 @@ export const roundsSchema: CollectionSchema = {
     number('turnsPlayed'),
     /** R41: the alibis drawn so far, public JSON: [{ cardId, text, afterTurn }]. */
     text('revealedAlibis'),
+    /** R44: the round's complication, drawn by code; flavor, not a clue. */
+    text('twist'),
   ],
   permissions: signedInReadOnly,
 }

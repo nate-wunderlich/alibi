@@ -17,7 +17,9 @@ const devSamples = action(async ({ params, tools }) => {
   if (!setting) refuse('Unknown setting id.')
   // Fake names, only to exercise the R39 guard; they never reach a prompt.
   const guardNames = Array.isArray(params.guardNames) ? params.guardNames.map(String) : []
-  return runSample(tools, setting, guardNames)
+  // R44: a fake list of names from "earlier cases", to exercise the avoid-names rule.
+  const avoidNames = Array.isArray(params.avoidNames) ? params.avoidNames.map(String) : []
+  return runSample(tools, setting, guardNames, avoidNames)
 })
 
 export const devActions: Record<string, ActionHandler<Env>> = { devSamples }

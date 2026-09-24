@@ -8,7 +8,7 @@
  */
 
 import type { PresetCase } from './presetCase'
-import type { CardKind, Player } from './rules'
+import { randomIndex, type CardKind, type Player, type Rng } from './rules'
 import type { Setting } from './settings'
 
 export const CARD_NAME_MAX = 40
@@ -205,6 +205,86 @@ export function playerNameError(label: string): string {
   return `${label} contains a player's name; player names must never appear. Refer to players only as "the host" or "the guest".`
 }
 
+// ---------------------------------------------------------------------------
+// R44: variety across games
+// ---------------------------------------------------------------------------
+
+/** R44 (3): complications, one drawn per round by code; the case must use it. */
+export const TWISTS = [
+  'a sudden storm that cuts everyone off',
+  'a blackout at the worst possible moment',
+  'a double-cross between two allies',
+  'a forged document',
+  'a missing key',
+  'a false alarm that pulled everyone away',
+  'a secret identity',
+  'a stopped clock that shows the wrong time',
+  'a message sent but never delivered',
+  'an object swapped for an identical copy',
+  'an unexpected visitor nobody admits letting in',
+  'a hidden passage',
+  'a bet that someone cannot pay',
+  'a torn photograph',
+]
+
+/** R44 (3): the round's complication. */
+export function drawTwist(rng: Rng): string {
+  return TWISTS[randomIndex(TWISTS.length, rng)]
+}
+
+/**
+ * Titles, honorifics, and role words that are not names ("Captain Reeves" is
+ * a Reeves, not every captain; "First Mate Harlow Vance" is a Harlow Vance).
+ */
+const TITLES = new Set(
+  (
+    'the dr doctor captain capt professor prof lady lord sir dame madame madam mrs mr ms miss mister chief ' +
+    'commander lieutenant sergeant sgt detective inspector father sister brother admiral general colonel major ' +
+    'officer agent engineer ensign count countess duke duchess baron baroness king queen prince princess uncle ' +
+    'aunt nurse judge mayor reverend saint old young ' +
+    // Ship, station, and expedition roles the cases use as titles (D55 e2e).
+    'first second third mate quartermaster bosun boatswain navigator pilot helmsman cook steward purser ' +
+    'deckhand cabin boy girl private corporal marshal sheriff deputy warden constable curator archivist ' +
+    'technician tech mechanic medic ranger guide keeper butler maid chef gardener head senior junior'
+  ).split(' '),
+)
+
+/**
+ * R44 (2): the first and last name tokens of a person's name: the text
+ * before any comma, its leading run of capitalized words, titles dropped,
+ * tokens of 3+ letters, lowercased ("Dr. Lena Webb" -> lena, webb).
+ */
+export function nameTokens(name: string): string[] {
+  const words = name.split(',')[0].trim().split(/\s+/)
+  const lead: string[] = []
+  for (const w of words) {
+    if (!/^\p{Lu}/u.test(w)) break
+    lead.push(w)
+  }
+  const tokens = lead
+    .flatMap((w) => w.split(/[^\p{L}]+/u))
+    .filter((t) => t.length >= 3 && /^\p{Lu}/u.test(t) && !TITLES.has(t.toLowerCase()))
+    .map((t) => t.toLowerCase())
+  if (tokens.length === 0) return []
+  return [...new Set([tokens[0], tokens[tokens.length - 1]])]
+}
+
+/**
+ * R44 (2): the names not to reuse, in order, without duplicates, and never
+ * one that carries a player's name (R39): those never go into a prompt.
+ */
+export function avoidNameList(names: string[], playerNames: string[]): string[] {
+  const seen = new Set<string>()
+  const list: string[] = []
+  for (const raw of names) {
+    const name = raw.trim()
+    if (!name || seen.has(name.toLowerCase()) || containsPlayerName(name, playerNames)) continue
+    seen.add(name.toLowerCase())
+    list.push(name)
+  }
+  return list
+}
+
 export type CaseValidation = { ok: true; case: PresetCase } | { ok: false; errors: string[] }
 
 /** A non-empty string up to `max` characters, or an error message. */
@@ -230,7 +310,14 @@ const GROUPS: { key: 'suspects' | 'weapons' | 'locations'; kind: CardKind }[] = 
  */
 export function validateCase(
   input: unknown,
-  options: { settingName?: string; playerNames?: string[] } = {},
+  options: {
+    settingName?: string
+    playerNames?: string[]
+    /** R44 (2): victim and suspect names from the players' earlier cases, not to reuse. */
+    avoidNames?: string[]
+    /** R44 (2): the final attempt accepts a repeat rather than falling back. */
+    allowRepeatNames?: boolean
+  } = {},
 ): CaseValidation {
   if (typeof input !== 'object' || input === null) return { ok: false, errors: ['Expected a case object.'] }
   const c = input as Record<string, unknown>
@@ -286,6 +373,24 @@ export function validateCase(
     const term = findGraphicTerm(text)
     if (term) errors.push(`${named ? safeLabel : label} is too graphic ("${term}").`)
     if (named) errors.push(playerNameError(safeLabel))
+  }
+
+  // R44 (2): no victim or suspect may share a first or last name with an earlier case's.
+  if (options.avoidNames?.length && !options.allowRepeatNames) {
+    const used = new Set(options.avoidNames.flatMap(nameTokens))
+    const people: [string, unknown][] = [
+      ['The victim', c.victim],
+      ...cards.filter((card) => card.kind === 'suspect').map((card): [string, unknown] => ['The suspect', card.name]),
+    ]
+    for (const [role, value] of people) {
+      if (typeof value !== 'string') continue
+      const repeated = nameTokens(value).filter((t) => used.has(t))
+      if (repeated.length === 0) continue
+      // Never echo a text that carries a player's name (R39).
+      const named = options.playerNames ? containsPlayerName(value, options.playerNames) : false
+      const who = named ? role : `${role} "${value.split(',')[0].trim()}"`
+      errors.push(`${who} reuses a name from earlier cases; choose completely new first and last names.`)
+    }
   }
 
   const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
@@ -441,7 +546,12 @@ export function buildQuestionPrompt(setting: Setting): Prompt {
  * AI writes the cast; code picks the solution afterwards, so the AI never
  * knows who did it.
  */
-export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], earlierTitles: string[]): Prompt {
+export function buildCasePrompt(
+  setting: Setting,
+  answers: AnsweredQuestion[],
+  earlierTitles: string[],
+  variety: { avoidNames?: string[]; twist?: string } = {},
+): Prompt {
   return {
     system: [
       'You write the cases for alibi, a two-player detective game with 12 cards per case.',
@@ -457,6 +567,13 @@ export function buildCasePrompt(setting: Setting, answers: AnsweredQuestion[], e
       earlierTitles.length > 0
         ? `Earlier cases in this series (your title must not repeat or echo any of them): ${earlierTitles.join('; ')}`
         : 'This is the first case in the series.',
+      // R44 (2), (3): fresh names, and the round's complication.
+      ...(variety.avoidNames?.length
+        ? [
+            `Names already used in these players' earlier cases (do not use any of these first or last names for the victim or the suspects): ${variety.avoidNames.join('; ')}`,
+          ]
+        : []),
+      ...(variety.twist ? [`This case must use this complication: ${variety.twist}. Work it into the opening or at least one card.`] : []),
       '',
       'Write:',
       '- a title (at most 6 words). The title must not repeat the setting\'s name.',

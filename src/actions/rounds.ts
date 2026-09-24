@@ -15,11 +15,11 @@
 import { enqueueJob, type ActionTools } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { templateAlibi } from '../game/alibis'
-import { buildQuestionPrompt, type AnsweredQuestion } from '../game/caseGen'
+import { avoidNameList, buildQuestionPrompt, drawTwist, type AnsweredQuestion } from '../game/caseGen'
 import { PRESET_CASE, type PresetCase } from '../game/presetCase'
 import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet } from '../game/questions'
 import { deal, starterForRound, type Card, type Player } from '../game/rules'
-import { pickSetting, SETTINGS } from '../game/settings'
+import { pickSetting, SETTINGS, type SettingPlay } from '../game/settings'
 import { portraitsEnabled } from '../server/portraits'
 import { askForCase, askForJson } from './ai'
 import { loadRound, must, refuse, userInSeat, type Game } from './helpers'
@@ -48,13 +48,76 @@ export async function usedSettingIds(tools: ActionTools, gameId: string): Promis
   return rounds.records.map((r) => String(r.data.settingId))
 }
 
+/** One started round from a player's history (R44). */
+interface PlayedRound {
+  roundId: string
+  settingId: string
+  victim: string
+  playedAt: number
+}
+
+/** How many of the players' newest rounds feed the names to avoid (R44 (2)). */
+const NAME_HISTORY = 20
+
+/**
+ * R44: the started rounds (playing or revealed) of every game these users
+ * have played, newest first. Actions read across games (RBAC is off for
+ * them), and only the server ever sees this.
+ */
+async function playHistory(tools: ActionTools, userIds: string[]): Promise<PlayedRound[]> {
+  const gameIds = new Set<string>()
+  for (const userId of userIds.filter((id) => id !== '')) {
+    const rows = must(
+      await tools.query('players', { where: { userId }, orderBy: 'createdAt', orderDir: 'desc', limit: 30 }),
+      'Loading play history',
+    )
+    for (const r of rows.records) gameIds.add(String(r.data.gameId))
+  }
+  const played: PlayedRound[] = []
+  for (const gameId of gameIds) {
+    const rows = must(await tools.query('rounds', { where: { gameId }, limit: 20 }), 'Loading play history')
+    for (const r of rows.records) {
+      const status = String(r.data.status)
+      if (status !== 'playing' && status !== 'revealed') continue
+      played.push({
+        roundId: r.recordId,
+        settingId: String(r.data.settingId),
+        victim: String(r.data.victim ?? ''),
+        playedAt: Date.parse(r.createdAt) || 0,
+      })
+    }
+  }
+  return played.sort((a, b) => b.playedAt - a.playedAt)
+}
+
+/**
+ * R44 (2): the victim and suspect names of the players' last NAME_HISTORY
+ * started rounds, never with a player's name in them (R39).
+ */
+async function namesToAvoid(tools: ActionTools, game: Game, playerNames: string[]): Promise<string[]> {
+  const recent = (await playHistory(tools, [game.host, game.guest])).slice(0, NAME_HISTORY)
+  const names: string[] = []
+  for (const round of recent) {
+    if (round.victim) names.push(round.victim.split(',')[0].trim())
+    const suspects = must(
+      await tools.query('cards', { where: { roundId: round.roundId, kind: 'suspect' }, limit: 10 }),
+      'Loading earlier suspects',
+    )
+    names.push(...suspects.records.map((c) => String(c.data.name)))
+  }
+  return avoidNameList(names, playerNames)
+}
+
 /**
  * Prepare round `number`: a new setting, and 2 questions for each player.
  * The guest may not have joined yet; their row is claimed when they do.
+ * R44: the setting is the one the players have played least recently; for
+ * round 1 that is the host's history only (the guest has not joined yet).
  * Returns the new round's id.
  */
 export async function prepareRound(tools: ActionTools, game: Game, number: number): Promise<string> {
-  const setting = pickSetting(await usedSettingIds(tools, game.id), Math.random)
+  const history: SettingPlay[] = await playHistory(tools, [game.host, game.guest])
+  const setting = pickSetting(await usedSettingIds(tools, game.id), Math.random, history)
   const { recordId: roundId } = must(
     await tools.create('rounds', {
       gameId: game.id,
@@ -81,6 +144,7 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
       confessionAudioUrl: '',
       turnsPlayed: 0,
       revealedAlibis: '[]',
+      twist: '',
     }),
     `Preparing round ${number}`,
   )
@@ -142,7 +206,10 @@ export async function guardNames(tools: ActionTools, game: Game): Promise<string
   return rows.records.map((r) => String(r.data.displayName ?? '').trim()).filter((n) => n !== '')
 }
 
-/** Ask the AI for the case; fall back to the preset case after CASE_ATTEMPTS calls (R40). */
+/**
+ * Ask the AI for the case; fall back to the preset case after CASE_ATTEMPTS
+ * calls (R40). R44: with the names to avoid and the round's twist.
+ */
 async function writeCase(
   tools: ActionTools,
   game: Game,
@@ -150,6 +217,7 @@ async function writeCase(
   number: number,
   answers: AnsweredQuestion[],
   playerNames: string[],
+  twist: string,
 ) {
   const setting = SETTINGS.find((s) => s.id === settingId)
   if (!setting) return PRESET_CASE
@@ -157,7 +225,11 @@ async function writeCase(
   const earlierTitles = rounds.records
     .filter((r) => Number(r.data.number) < number && String(r.data.caseTitle) !== '')
     .map((r) => String(r.data.caseTitle))
-  const generated = await askForCase(tools, `case for round ${number} (${setting.id})`, setting, answers, earlierTitles, playerNames)
+  const avoidNames = await namesToAvoid(tools, game, playerNames)
+  const generated = await askForCase(tools, `case for round ${number} (${setting.id})`, setting, answers, earlierTitles, playerNames, {
+    avoidNames,
+    twist,
+  })
   if (generated) {
     // Public data only (the cast, not the solution), for tracing what the AI wrote.
     console.info(`[ai] case for round ${number}: "${generated.title}" | ${generated.cards.map((c) => c.name).join(' | ')}`)
@@ -187,7 +259,10 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
       answers[userInSeat(game, seat)].map((a) => ({ seat, question: a.question, answer: a.answer })),
     )
     const names = await guardNames(tools, game)
-    const theCase = await writeCase(tools, game, round.settingId, round.number, all, names)
+    // R44 (3): the round's complication, drawn by code and stored on the round (flavor, not a clue).
+    const twist = drawTwist(Math.random)
+    must(await tools.update('rounds', roundId, { twist }), 'Choosing the twist')
+    const theCase = await writeCase(tools, game, round.settingId, round.number, all, names, twist)
     await layOutAndDeal(tools, game, roundId, round.number, theCase)
   } catch (e) {
     await tools.update('rounds', roundId, { status: 'answering' })
