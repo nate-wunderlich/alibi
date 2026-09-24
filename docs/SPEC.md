@@ -98,7 +98,8 @@ Round status: generating -> ready -> playing -> revealed.
   card must be in their hand and in the guess
 - accuse(suspect, weapon, location) active player only
 - nextRound() host only, after a reveal, if the series is not over
-- endSeries() host only
+- endSeries() host only: NOT BUILT. A player who leaves stalls the round,
+  and a series cannot be ended early (see GAME_RULES.md, Known edges).
 Every action validates turn and membership on the server using the pure
 rules module. The client is never trusted about whose turn it is.
 

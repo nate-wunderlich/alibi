@@ -86,7 +86,8 @@ If you guess and do not accuse, the turn passes to your opponent.
   starts the next round once both players have answered its questions.
 
 ## Known edges (by design, named in the writeup)
-- A player who leaves mid-round stalls it. The host can end the series.
+- A player who leaves mid-round stalls it. endSeries was not built, so a
+  series cannot be ended early.
   No turn timers in this version.
 - No reconnect-to-seat logic beyond what signing back in provides.
 - Two actions arriving at the same instant on one round are not
