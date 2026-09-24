@@ -16,10 +16,12 @@ secret, enforced by the server rather than the honor system.
 2. Host creates a game (series length) and gets a short join code.
 3. Guest joins with the code. Each player answers their 2 case
    questions for round 1.
-4. Host starts. Round 1's case is generated from the 4 answers; the
-   server picks the solution and deals.
+4. Host starts the series. Round 1's case is generated from the 4
+   answers; the server picks the solution, deals, and flips a coin for
+   who moves first (R41; later rounds alternate).
 5. Players take turns guessing and accusing. Shown cards stay private;
-   the round log updates live for both.
+   the round log updates live for both. After turns 4, 8, ..., an alibi
+   clears one card from the starter's hand for both players (R41).
 6. Someone wins the round. The reveal plays with narration. The score
    updates. Both players answer the next round's questions on the
    reveal screen, the next case generates, and play continues until
@@ -34,7 +36,9 @@ secret, enforced by the server rather than the honor system.
   seconds; portraits fill in during play).
 - TABLE: series score; case title and setting; my hand; the face-up
   card; the cast (12 cards, suspect portraits where ready); whose turn;
-  guess builder; round log; the detective grid; accuse button.
+  guess builder; round log (guesses, and each alibi in turn order with
+  an "Alibi" label and its in-setting text); the detective grid; accuse
+  button.
 - REVEAL (per round): envelope cards, confession text, narration audio,
   both hands, both players' answers, updated score, my 2 questions for
   the next case, Next case (host, once both have answered).
@@ -44,7 +48,8 @@ secret, enforced by the server rather than the honor system.
 A private grid on the TABLE screen: the 12 cards down the side and three
 columns (me, opponent, envelope). The player marks each cell (has it /
 doesn't / maybe). The game pre-fills what the player provably knows:
-their own hand, the face-up card, and every card shown to them. Stored
+their own hand, the face-up card, every card shown to them, and every
+card an alibi cleared (not in the envelope; held by the starter). Stored
 in `notes`, owner only.
 
 ## Data and visibility
@@ -54,17 +59,21 @@ to see. Hiding data in the UI does not count.
 | Collection  | Holds                                          | Readable by                           |
 |-------------|------------------------------------------------|---------------------------------------|
 | games       | code, host, guest, best-of,                    | both players                          |
-|             | score, current round, status, series winner    |                                       |
+|             | score, current round, status, series winner,   |                                       |
+|             | first starter (R41 coin flip)                  |                                       |
 | players     | game, user, display name, seat                 | both players                          |
 | questions   | round, user, 2 questions with 4 answers each   | owner only                            |
 | answers     | round, user, question id, chosen answer        | owner only; both after the reveal     |
 | rounds      | game, number, status, setting id, case title,  | both players                          |
 |             | victim, opening narration, starter, turn,      |                                       |
 |             | face-up card id, winner, confession + audio    |                                       |
-|             | (after reveal)                                 |                                       |
+|             | (after reveal), turns played, drawn alibis     |                                       |
+|             | (card id, text, after turn; R41)               |                                       |
 | cards       | round, kind, name, description, image url      | both players                          |
 | hands       | round, user, card ids                          | owner only; both after the reveal     |
 | solution    | round, suspect, weapon, location               | no client until the round is revealed |
+| alibiTexts  | round, card id, alibi text (one per card)      | no client, ever; a drawn alibi is     |
+|             |                                                | copied into the round (R41)           |
 | guesses     | round, by, suspect, weapon, location, result   | both players                          |
 |             | (shown / no match), sequence number            |                                       |
 | shown_cards | guess, card id                                 | the guesser and the shower only       |
@@ -202,15 +211,17 @@ case per series (best of 7): 7 question sets, 7 cases, 7 confessions,
   envelope is never dealt; each hand has 4 and exactly 1 is face up;
   single-match auto-show; multi-match requires a choice from the
   guesser's opponent; "no match" when the opponent holds none;
-  accusation right wins, wrong loses; starter alternates; series ends
-  at the majority for 3, 5, and 7.
+  accusation right wins, wrong loses; round 1's starter is a coin flip
+  and later rounds alternate; alibis are due after turns 4, 8, 12 and
+  clear a non-public card from the starter's hand, never the envelope;
+  series ends at the majority for 3, 5, and 7.
 - Unit (settings.ts, questions.ts): no setting repeats within a
   series; the question validator rejects wrong counts, duplicates, and
   over-length text; the fallback always yields 4 valid questions, 2 per
   player.
 - Multi-user (deepspace/testing, 2 users): player B cannot read player
-  A's hand or the solution (written first, must fail before the
-  permissions exist); player B cannot read player A's answers before
+  A's hand, the solution, or the alibi texts (written first, must fail
+  before the permissions exist); player B cannot read player A's answers before
   the reveal; a guess appears live on both screens; the shown card is
   visible to the guesser only.
 - Visual gate per slice on the live URL: two windows, two accounts.
