@@ -277,6 +277,21 @@ R46. A player-facing how-to-play guide, viewable at any time (Nate). One
     flip for the first starter, then alternating). Plain player
     language, phone-first, no technical terms, no player names.
 
+R47. No scrolling, anywhere in the game (Nate: everything must be in
+    view without scrolling, ever). Every screen fits a phone viewport of
+    390x660 (an iPhone-width screen minus browser bars) and a desktop
+    viewport of 1280x720, with no page scroll and no scrolling panel.
+    Screens that cannot hold everything at once are split into tabs or
+    steps instead: the table gets a fixed bottom tab bar (Play: turn,
+    hand, face-up card; Grid; Log, newest first, latest entries only;
+    Cast, a compact 3x4 portrait grid with details on tap); the lobby
+    shows one question at a time; the reveal is a sequence of steps
+    (verdict, confession, hands and answers, next case); home shows the
+    most recent cases only; the how-to-play guide becomes tabbed
+    sections. Enforced by an e2e test that measures every screen at both
+    sizes. The current live build (f5ba554) is the fallback if this is
+    not verified before the freeze.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
