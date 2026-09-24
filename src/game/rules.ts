@@ -123,10 +123,43 @@ export function checkAccusation(accusation: Triple, envelope: Triple): boolean {
   )
 }
 
-/** Who starts a round: the host starts round 1, then it alternates (odd rounds host, even rounds guest). */
-export function starterForRound(round: number): Player {
+/** R41: who starts round 1, a coin flip (it used to be the host every time). */
+export function firstStarter(rng: Rng): Player {
+  return rng() < 0.5 ? 'host' : 'guest'
+}
+
+/** Who starts a round: `first` starts round 1, then it alternates (odd rounds `first`, even rounds the other player). */
+export function starterForRound(round: number, first: Player): Player {
   if (!Number.isInteger(round) || round < 1) throw new Error(`Round numbers start at 1; got ${round}.`)
-  return round % 2 === 1 ? 'host' : 'guest'
+  return round % 2 === 1 ? first : nextTurn(first)
+}
+
+/**
+ * R41: an alibi is due after every second full turn pair, that is after
+ * turns 4, 8, 12, ... of a round (`turnNumber` counts the turns played so
+ * far in the round, from 1).
+ */
+export function alibiDue(turnNumber: number): boolean {
+  return Number.isInteger(turnNumber) && turnNumber > 0 && turnNumber % 4 === 0
+}
+
+/**
+ * R41: the card an alibi clears: a random card from the STARTER's hand that
+ * is not already public (face up or cleared by an earlier alibi), or null if
+ * none is left. A hand card is never in the envelope, so an alibi never
+ * clears the answer; the envelope is checked anyway, as a guard.
+ */
+export function pickAlibiCard(
+  dealt: Deal,
+  starter: Player,
+  alreadyPublic: readonly string[],
+  rng: Rng,
+): Card | null {
+  const inEnvelope = new Set([dealt.envelope.suspect, dealt.envelope.weapon, dealt.envelope.location])
+  const eligible = dealt.hands[starter].filter(
+    (c) => !alreadyPublic.includes(c.id) && c.id !== dealt.faceUp.id && !inEnvelope.has(c.id),
+  )
+  return eligible.length > 0 ? eligible[randomIndex(eligible.length, rng)] : null
 }
 
 /**

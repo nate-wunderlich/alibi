@@ -243,8 +243,9 @@ async function layOutAndDeal(tools: ActionTools, game: Game, roundId: string, nu
   }
   must(await tools.create('solution', { roundId, ...dealt.envelope }), 'Sealing the envelope')
 
-  // 3. Open the round: the starter alternates by round number.
-  const starter = starterForRound(number)
+  // 3. Open the round: the starter alternates by round number. R41's random
+  // first starter (firstStarter) is not wired in yet, so round 1 is still the host's.
+  const starter = starterForRound(number, 'host')
   must(
     await tools.update('rounds', roundId, {
       status: 'playing',

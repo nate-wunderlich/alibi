@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  alibiDue,
   checkAccusation,
   deal,
+  firstStarter,
   nextTurn,
+  pickAlibiCard,
   resolveGuess,
   seriesWinner,
   starterForRound,
@@ -175,9 +178,19 @@ describe('checkAccusation', () => {
   })
 })
 
-describe('starterForRound', () => {
-  it('alternates host, guest, host, ... starting with the host in round 1', () => {
-    expect([1, 2, 3, 4, 5, 6, 7].map(starterForRound)).toEqual([
+describe('firstStarter and starterForRound (R41)', () => {
+  it("round 1's starter is chosen by the rng: a coin flip", () => {
+    expect(firstStarter(constantRng(0.1))).toBe('host')
+    expect(firstStarter(constantRng(0.9))).toBe('guest')
+    const rng = seededRng(7)
+    const firsts = Array.from({ length: 1000 }, () => firstStarter(rng))
+    const hosts = firsts.filter((p) => p === 'host').length
+    expect(hosts).toBeGreaterThan(400)
+    expect(hosts).toBeLessThan(600)
+  })
+
+  it('later rounds alternate from whoever started round 1', () => {
+    expect([1, 2, 3, 4, 5, 6, 7].map((n) => starterForRound(n, 'host'))).toEqual([
       'host',
       'guest',
       'host',
@@ -186,11 +199,73 @@ describe('starterForRound', () => {
       'guest',
       'host',
     ])
+    expect([1, 2, 3, 4, 5, 6, 7].map((n) => starterForRound(n, 'guest'))).toEqual([
+      'guest',
+      'host',
+      'guest',
+      'host',
+      'guest',
+      'host',
+      'guest',
+    ])
   })
 
   it('refuses round numbers below 1 or with fractions', () => {
-    expect(() => starterForRound(0)).toThrow()
-    expect(() => starterForRound(1.5)).toThrow()
+    expect(() => starterForRound(0, 'host')).toThrow()
+    expect(() => starterForRound(1.5, 'guest')).toThrow()
+  })
+})
+
+describe('alibiDue (R41)', () => {
+  it('is true after turns 4, 8, and 12 (every second full turn pair)', () => {
+    for (const turn of [4, 8, 12]) expect(alibiDue(turn), `turn ${turn}`).toBe(true)
+  })
+
+  it('is false after every other turn', () => {
+    for (const turn of [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14]) expect(alibiDue(turn), `turn ${turn}`).toBe(false)
+  })
+})
+
+describe('pickAlibiCard (R41)', () => {
+  const dealt = deal(DECK, seededRng(3))
+
+  it("returns a card from the starter's hand that is not already public", () => {
+    for (const starter of ['host', 'guest'] as const) {
+      const hand = ids(dealt.hands[starter])
+      const publicIds = hand.slice(0, 2)
+      for (let seed = 0; seed < 50; seed++) {
+        const picked = pickAlibiCard(dealt, starter, publicIds, seededRng(seed))
+        expect(picked).not.toBeNull()
+        expect(hand).toContain(picked!.id)
+        expect(publicIds).not.toContain(picked!.id)
+      }
+    }
+  })
+
+  it("returns null when every card in the starter's hand is already public", () => {
+    expect(pickAlibiCard(dealt, 'host', ids(dealt.hands.host), seededRng(1))).toBeNull()
+  })
+
+  it("ignores public cards outside the starter's hand", () => {
+    const publicIds = [...ids(dealt.hands.guest), dealt.faceUp.id]
+    expect(pickAlibiCard(dealt, 'host', publicIds, seededRng(1))).not.toBeNull()
+  })
+
+  it('never picks a card in the envelope (1,000 random deals)', () => {
+    const rng = seededRng(11)
+    for (let i = 0; i < 1000; i++) {
+      const d = deal(DECK, rng)
+      const starter = rng() < 0.5 ? 'host' : 'guest'
+      const alreadyPublic = ids(d.hands[starter]).filter(() => rng() < 0.3)
+      const picked = pickAlibiCard(d, starter, alreadyPublic, rng)
+      const envelope = [d.envelope.suspect, d.envelope.weapon, d.envelope.location]
+      if (picked) {
+        expect(envelope).not.toContain(picked.id)
+        expect(ids(d.hands[starter])).toContain(picked.id)
+      } else {
+        expect(alreadyPublic).toHaveLength(4)
+      }
+    }
   })
 })
 

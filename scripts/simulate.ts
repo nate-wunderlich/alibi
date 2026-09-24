@@ -39,7 +39,9 @@
  * hand of the player who just moved (the second mover of the pair, so
  * always the non-starter); (iii) from the starter's hand (the player who
  * moved first in the round). Cards already cleared are skipped; if the
- * source has none left, there is no alibi.
+ * source has none left, there is no alibi. C(iii) is R41, the game's rule:
+ * it runs through the rules module's own alibiDue and pickAlibiCard, so the
+ * simulator and the game share one implementation (D48).
  *
  * Below the table: the chance the host wins a best-of-3 CAREFUL vs CAREFUL
  * series with the alternating starter (host starts rounds 1 and 3), from
@@ -49,7 +51,7 @@
  * not the round total): mean and max over rounds won by a right accusation.
  */
 
-import { checkAccusation, deal, resolveGuess, type Card, type CardKind, type Player, type Triple } from '../src/game/rules.ts'
+import { alibiDue, checkAccusation, deal, pickAlibiCard, resolveGuess, type Card, type CardKind, type Player, type Triple } from '../src/game/rules.ts'
 
 const KINDS: CardKind[] = ['suspect', 'weapon', 'location']
 const DECK: Card[] = KINDS.flatMap((kind) => [0, 1, 2, 3].map((n) => ({ id: `${kind[0]}${n}`, kind })))
@@ -211,7 +213,19 @@ function playRound(kinds: Record<Player, Kind>, starter: Player, schedule: Sched
     if (after) return finish(current, after)
 
     // Alibis come after a full turn pair (both players have moved).
-    if (turn % 2 === 0) {
+    const clear = (card: string) => {
+      cleared.add(card)
+      alibis++
+      agents.host.learnAlibi(card)
+      agents.guest.learnAlibi(card)
+    }
+    if (schedule === 'C' && source === 'starter') {
+      // R41, the game's schedule: the SAME alibiDue and pickAlibiCard the game uses.
+      if (alibiDue(turn)) {
+        const card = pickAlibiCard(d, starter, [...cleared], rng)
+        if (card) clear(card.id)
+      }
+    } else if (turn % 2 === 0) {
       const pair = turn / 2
       const due =
         schedule === 'B' || (schedule === 'C' && pair % 2 === 0) || (schedule === 'D' && alibis < 2)
@@ -219,13 +233,7 @@ function playRound(kinds: Record<Player, Kind>, starter: Player, schedule: Sched
         const hands =
           source === 'either' ? [...d.hands.host, ...d.hands.guest] : source === 'mover' ? d.hands[current] : d.hands[starter]
         const eligible = hands.map((c) => c.id).filter((id) => !cleared.has(id))
-        if (eligible.length > 0) {
-          const card = pickOne(eligible, rng)
-          cleared.add(card)
-          alibis++
-          agents.host.learnAlibi(card)
-          agents.guest.learnAlibi(card)
-        }
+        if (eligible.length > 0) clear(pickOne(eligible, rng))
       }
     }
     current = other(current)
