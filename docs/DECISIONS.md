@@ -235,6 +235,21 @@ R43. Alibis by number, card by card (refines R41, R42; D51 diagnosis:
     invalid, feeding back the per-number errors; after that, keep what
     is valid.
 
+R44. Variety across games (Nate: nothing should feel repetitive; the
+    live gates showed Marcus Webb as victim three times and The Siren's
+    Light three times). (1) Setting: the one either player has played
+    least recently (from both players' earlier rounds, any game), ties
+    at random; still no repeat within a series. (2) Names: the case
+    prompt lists every victim and suspect name from both players' last
+    20 rounds as names not to use; validateCase rejects a victim or
+    suspect sharing a first or last name token (3+ letters, capitalized)
+    with that list, feeding the offending names back; on the final
+    attempt a repeat is accepted rather than falling back. (3) Twist:
+    code draws one complication per round from a fixed list of at least
+    12 (e.g. a storm, a blackout, a double-cross, a forged document, a
+    missing key, a false alarm) and the case prompt requires the case to
+    use it. Player account names are never in these lists (R39).
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
