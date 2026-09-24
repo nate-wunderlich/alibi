@@ -248,7 +248,10 @@ R44. Variety across games (Nate: nothing should feel repetitive; the
     code draws one complication per round from a fixed list of at least
     12 (e.g. a storm, a blackout, a double-cross, a forged document, a
     missing key, a false alarm) and the case prompt requires the case to
-    use it. Player account names are never in these lists (R39).
+    use it. Player account names are never in these lists (R39). Round
+    1's setting uses the host's history only (the guest has not joined
+    when it is picked); rounds 2+ use both players'. Only rounds that
+    started (playing or revealed) count as played.
 
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
