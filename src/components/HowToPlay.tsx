@@ -76,7 +76,8 @@ export function HowToPlayContent() {
           Before each case, you each get 2 short scenes, each ending in a question with 4 answers to tap. Your
           answers shape the case that is written: its people, its methods, its places, and its story.
         </p>
-        <p>Your opponent does not see your answers until the end of the round.</p>
+        {/* The opening credits each seat's choices (creditHost, creditGuest): R37, R38, R39. */}
+        <p>The opening story credits each player&apos;s choices, so you both hear what shaped the case.</p>
       </Section>
 
       <Section title="The detective grid">
@@ -100,7 +101,7 @@ export function HowToPlayContent() {
         </p>
         {/* Best of 3, 5, or 7; majority 2, 3, or 4: rules.ts seriesWinner; GAME_RULES.md "Players and series". */}
         <p>
-          A series is best of 3, 5, or 7, chosen by the player who starts the game. The first to win 2, 3, or 4
+          A series is best of 3, 5, or 7, chosen by the player who creates the game. The first to win 2, 3, or 4
           rounds wins the series.
         </p>
         {/* Coin flip, then alternating: rules.ts firstStarter and starterForRound; R41. */}
