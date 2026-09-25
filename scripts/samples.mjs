@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * npm run samples [-- N | setting-id ...]
+ * npm run samples [-- N | setting-id ...] --yes
+ *
+ * R48: it prints the estimated paid calls and refuses to run without --yes.
  *
  * R38 (4): measure prose quality instead of eyeballing it. Runs N settings
  * (default 3, picked at random without repeats) or the named setting ids
@@ -23,7 +25,9 @@ import { chromium } from '@playwright/test'
 import { loadAllTestAccounts, newSignedInContext } from 'deepspace/testing'
 
 const BASE = `http://localhost:${process.env.DEEPSPACE_PORT ?? 5173}`
-const positional = process.argv.slice(2)
+const args = process.argv.slice(2)
+const confirmed = args.includes('--yes')
+const positional = args.filter((a) => a !== '--yes')
 const FAKE_NAMES = ['Alex Rivera', 'Sam Porter']
 // R44: names seen live, passed as "earlier cases" so the avoid-names rule is exercised.
 const FAKE_AVOID = ['Marcus Webb', 'Dr. Vex', 'Iris Thorne', 'Captain Reeves']
@@ -41,6 +45,14 @@ if (unknown.length) {
   process.exit(1)
 }
 const ids = requested.length ? requested : [...allIds].sort(() => Math.random() - 0.5).slice(0, count)
+
+// R48: samples are the one deliberate paid check. Say what it costs, and go on only with --yes.
+// Per setting: questions, case, alibis, and confession, 1 call each, up to 9 with retries.
+console.log(`This run makes about ${ids.length * 4} paid text-AI calls (up to ${ids.length * 9} with retries) for ${ids.length} setting(s).`)
+if (!confirmed) {
+  console.error('Nothing was called. Run again with --yes to spend them: npm run samples -- <args> --yes')
+  process.exit(1)
+}
 
 try {
   await fetch(`${BASE}/api/auth/ok`)

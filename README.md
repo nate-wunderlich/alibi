@@ -49,10 +49,10 @@ npm run login            # deepspace auth login
 npm run dev              # local dev server on http://localhost:5173
 npm run deploy           # deepspace deploy
 npm run test:unit        # vitest
-npm run test:e2e         # Playwright, two signed-in users
+npm run test:e2e         # Playwright, two signed-in users; the text AI is a local stand-in (R48), so no credits are spent
 npm run type-check
 npm run lint
-npm run samples -- 3     # AI prose samples; needs npm run dev and a test account
+npm run samples -- 3 --yes   # paid AI prose samples (prints the estimated calls; needs --yes, npm run dev, a test account)
 node scripts/simulate.ts 20000   # round simulator over the real rules
 ```
 

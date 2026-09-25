@@ -30,6 +30,9 @@ export default defineConfig({
     // responses and fails setup with its own clear error at the timeout.
     url: `${BASE_URL}/api/auth/ok`,
     reuseExistingServer: false,
+    // R48: the text AI answers from a local stand-in under the e2e runner, so tests never spend
+    // credits. Read by src/actions/ai.ts; production builds cannot reach it.
+    env: { VITE_ALIBI_AI_STANDIN: '1' },
     timeout: 60_000,
     stdout: 'pipe',
     stderr: 'pipe',

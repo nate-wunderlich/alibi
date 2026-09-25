@@ -13,6 +13,7 @@
  */
 
 import type { ActionResult, ActionTools, CronContext } from 'deepspace/worker'
+import { standInReply } from '../server/aiStandIn'
 import { alibiOrder, alibiPrompt, validateAlibis, type AlibiCardRef } from '../game/alibis'
 import { buildCasePrompt, substituteNames, validateCase, type AnsweredQuestion, type Prompt } from '../game/caseGen'
 import type { PresetCase } from '../game/presetCase'
@@ -84,12 +85,19 @@ export async function askForJson<T>(
   let messages: Message[] = [{ role: 'user', content: prompt.user }]
   for (let attempt = 1; attempt <= attempts; attempt++) {
     console.info(`[ai] ${label}: call ${attempt}`)
-    const result = await tools.integration('anthropic/chat-completion', {
-      model: AI_MODEL,
-      max_tokens: maxTokens,
-      system: prompt.system,
-      messages,
-    })
+    // R48: under the e2e runner only, a local stand-in answers instead of the paid AI. The e2e
+    // runner sets VITE_ALIBI_AI_STANDIN=1 (tests/playwright.config.ts); plain `npm run dev` does
+    // not. The condition is written inline so a production build (DEV compiled to false) drops
+    // this branch and the stand-in module with it (checked by grepping the built worker).
+    const result =
+      import.meta.env.DEV && import.meta.env.VITE_ALIBI_AI_STANDIN === '1'
+        ? { success: true as const, data: { content: [{ type: 'text', text: standInReply(label, prompt, attempt) }] } }
+        : await tools.integration('anthropic/chat-completion', {
+            model: AI_MODEL,
+            max_tokens: maxTokens,
+            system: prompt.system,
+            messages,
+          })
     if (!result.success) {
       console.warn(`[ai] ${label}: call ${attempt} failed: ${result.error}`)
       continue
@@ -117,7 +125,8 @@ export async function askForJson<T>(
       report?.({ attempts: attempt, ok: true })
       return checked.value
     }
-    console.warn(`[ai] ${label}: call ${attempt} failed validation: ${checked.errors.slice(0, 3).join(' ')}`)
+    // R48: the full error list, so a production failure can be diagnosed from the logs (D73).
+    console.warn(`[ai] ${label}: call ${attempt} failed validation: ${checked.errors.join(' ')}`)
     messages = retryWith(
       ['Your reply did not pass these checks:', ...checked.errors.map((e) => `- ${e}`), 'Reply again with the corrected JSON only.'].join('\n'),
       substituted === parsed ? reply : JSON.stringify(substituted),
