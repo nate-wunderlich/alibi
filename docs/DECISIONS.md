@@ -292,6 +292,20 @@ R47. No scrolling, anywhere in the game (Nate: everything must be in
     sizes. The current live build (f5ba554) is the fallback if this is
     not verified before the freeze.
 
+R48. Automated tests never spend credits (D73: the account hit 0 of 500
+    credits, almost all from 1,356 text-AI calls made by e2e and samples
+    runs; the live game then fell back on every AI step). Under the e2e
+    runner, every text-AI call (questions, case, alibis, confession)
+    goes to a deterministic local stand-in that returns valid replies,
+    so the tests exercise validation and assembly instead of the
+    fallback. The stand-in can never be used by a production build (it
+    is gated on import.meta.env.DEV AND a test-only switch that only the
+    e2e runner sets), and plain local dev is unchanged. npm run samples
+    stays real but prints the estimated number of paid calls and
+    requires --yes to proceed. When a reply fails validation, the log
+    keeps the full error list (was the first 3). The architect checks
+    app usage at every session start.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
