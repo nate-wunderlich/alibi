@@ -11,21 +11,22 @@ import { answerMyQuestions, mustCall } from './helpers/game'
 
 const T = { timeout: 15_000 }
 
-/** The guide's sections, in order (R46). */
+/** The guide's sections, in order (R46), with the tab that shows each (R47: one section at a time). */
 export const SECTIONS = [
-  'The goal',
-  'The cards and the envelope',
-  'Your turn',
-  'Alibis',
-  'Choice scenes',
-  'The detective grid',
-  'Winning a round and a series',
+  { tab: 'goal', heading: 'The goal' },
+  { tab: 'cards', heading: 'The cards and the envelope' },
+  { tab: 'turn', heading: 'Your turn' },
+  { tab: 'alibis', heading: 'Alibis' },
+  { tab: 'scenes', heading: 'Choice scenes' },
+  { tab: 'grid', heading: 'The detective grid' },
+  { tab: 'winning', heading: 'Winning a round and a series' },
 ]
 
-base('a signed-out visitor reads /how-to-play: every section heading', async ({ page }) => {
+base('a signed-out visitor reads /how-to-play: every section heading, one tab at a time', async ({ page }) => {
   await page.goto('/how-to-play')
   await baseExpect(page.getByTestId('how-to-play')).toBeVisible(T)
-  for (const heading of SECTIONS) {
+  for (const { tab, heading } of SECTIONS) {
+    await page.getByTestId(`guide-tab-${tab}`).click()
     await baseExpect(page.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible()
   }
 })
@@ -64,7 +65,8 @@ test('during a game, the header opens the guide over the table, and closing retu
   await page.getByTestId('nav-how-to-play').click()
   const panel = page.getByTestId('how-to-play-panel')
   await expect(panel).toBeVisible(T)
-  for (const heading of SECTIONS) {
+  for (const { tab, heading } of SECTIONS) {
+    await panel.getByTestId(`guide-tab-${tab}`).click()
     await expect(panel.getByRole('heading', { name: heading, exact: true }), heading).toBeVisible()
   }
   // Play is never left: the table and the turn controls stay mounted underneath.

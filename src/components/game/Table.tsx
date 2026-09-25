@@ -13,7 +13,7 @@
  * these conditions only decide which controls to show.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   Button,
   ConfirmModal,
@@ -32,6 +32,7 @@ import type { CardKind } from '../../game/rules'
 import { AlibiEntry } from './AlibiEntry'
 import { CardChip, CardView, InlineError, KIND_LABEL, KINDS, SuspectFace } from './CardView'
 import { DetectiveGrid } from './DetectiveGrid'
+import { FitList } from '../FitList'
 import { NarrationAudio } from './NarrationAudio'
 import { Scoreboard } from './Scoreboard'
 import { alibisOf, type Card, type GameView, type Guess, type RevealedAlibi, type Round } from './useGameData'
@@ -407,52 +408,6 @@ function LogTab({ view, round }: { view: GameView; round: Round }) {
         </p>
       )}
     />
-  )
-}
-
-/**
- * A list that shows only the items that fit its height (R47), then a "more"
- * line. It renders everything once, measures, and keeps what fits; a new item
- * or a new height measures again.
- */
-function FitList({
-  count,
-  render,
-  more,
-}: {
-  count: number
-  render: (index: number) => ReactNode
-  more: (hidden: number) => ReactNode
-}) {
-  const box = useRef<HTMLOListElement>(null)
-  const [shown, setShown] = useState<number | null>(null)
-  const [height, setHeight] = useState(0)
-
-  useEffect(() => {
-    const el = box.current
-    if (!el) return
-    const observer = new ResizeObserver(() => setHeight(el.clientHeight))
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-  useLayoutEffect(() => setShown(null), [count, height])
-  useLayoutEffect(() => {
-    const el = box.current
-    if (shown !== null || !el) return
-    const top = el.getBoundingClientRect().top
-    const items = Array.from(el.querySelectorAll<HTMLElement>(':scope > li'))
-    const fits = (limit: number) => items.filter((li) => li.getBoundingClientRect().bottom - top <= limit).length
-    const all = fits(el.clientHeight)
-    // Room for the "and N earlier" line when not everything fits.
-    setShown(all === items.length ? all : fits(el.clientHeight - 22))
-  }, [shown])
-
-  const n = shown ?? count
-  return (
-    <ol ref={box} className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
-      {Array.from({ length: n }, (_, i) => render(i))}
-      {shown !== null && shown < count && <li className="list-none">{more(count - shown)}</li>}
-    </ol>
   )
 }
 

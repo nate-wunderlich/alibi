@@ -12,6 +12,7 @@ import { AuthOverlay, useAuthStatus, useQuery } from 'deepspace'
 import { Button, Input, Label } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import { useAction } from '@/lib/actions'
+import { FitList } from '../../components/FitList'
 import { FileLabel, InlineError } from '../../components/game/CardView'
 import type { GameData } from '../../components/game/useGameData'
 
@@ -22,8 +23,9 @@ export default function HomePage() {
   const [signingIn, setSigningIn] = useState(false)
 
   return (
-    <div className="mx-auto w-full max-w-[480px] space-y-8 px-4 py-8 text-foreground">
-      <header>
+    // R47: one screen, never scrolling; the case list takes the room that is left.
+    <div className="mx-auto flex h-full w-full max-w-[480px] flex-col gap-5 px-4 py-4 text-foreground">
+      <header className="shrink-0">
         <h1 className="font-display text-4xl font-bold tracking-tight">Open a case</h1>
         <p className="mt-2 text-muted-foreground">
           Two detectives, one envelope. Start a series and share the code, or join your opponent&apos;s.
@@ -38,7 +40,7 @@ export default function HomePage() {
       </header>
 
       {isLoaded && !isSignedIn ? (
-        <div className="rounded-sm border border-border bg-card p-4">
+        <div className="shrink-0 rounded-sm border border-border bg-card p-4">
           <p className="mb-3">Sign in to start or join a case.</p>
           <Button data-testid="home-sign-in" onClick={() => setSigningIn(true)}>
             Sign in
@@ -62,7 +64,7 @@ function CreateGame() {
   const navigate = useNavigate()
 
   return (
-    <section>
+    <section className="shrink-0">
       <FileLabel>New series</FileLabel>
       <div role="radiogroup" aria-label="Series length" className="mb-3 grid grid-cols-3 gap-2">
         {SERIES_LENGTHS.map((n) => (
@@ -108,7 +110,7 @@ function JoinByCode() {
   const ready = code.trim().length === 6
 
   return (
-    <section>
+    <section className="shrink-0">
       <FileLabel>Join with a code</FileLabel>
       <form
         className="flex gap-2"
@@ -140,37 +142,47 @@ function JoinByCode() {
   )
 }
 
-/** Series I host or joined, newest first, so I can pick one back up. */
+/**
+ * Series I host or joined, newest first, so I can pick one back up. R47: only
+ * the cases that fit are listed, then "and N more".
+ */
 function MyCases() {
   const { userId } = useAuthStatus()
-  const hosting = useQuery<GameData>('games', { where: { host: userId ?? '' }, orderBy: 'createdAt', orderDir: 'desc', limit: 5 })
-  const joined = useQuery<GameData>('games', { where: { guest: userId ?? '' }, orderBy: 'createdAt', orderDir: 'desc', limit: 5 })
-  const mine = [...hosting.records, ...joined.records]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 5)
+  const hosting = useQuery<GameData>('games', { where: { host: userId ?? '' }, orderBy: 'createdAt', orderDir: 'desc', limit: 50 })
+  const joined = useQuery<GameData>('games', { where: { guest: userId ?? '' }, orderBy: 'createdAt', orderDir: 'desc', limit: 50 })
+  const mine = [...hosting.records, ...joined.records].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   if (mine.length === 0) return null
   const statusText = (g: GameData) =>
     g.status === 'lobby' ? 'In the lobby' : g.status === 'finished' ? 'Closed' : `Case ${g.currentRound} in play`
 
   return (
-    <section>
+    <section data-testid="my-cases" className="flex min-h-0 flex-1 flex-col">
       <FileLabel>Your cases</FileLabel>
-      <ul className="space-y-2">
-        {mine.map((g) => (
-          <li key={g.recordId}>
-            <Link
-              to={`/game/${g.recordId}`}
-              className="flex items-center justify-between rounded-sm border border-border bg-card px-3 py-2 hover:bg-accent"
-            >
-              <span>
-                Best of {g.data.bestOf} · {g.data.scoreHost}–{g.data.scoreGuest}
-              </span>
-              <span className="text-sm text-muted-foreground">{statusText(g.data)}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <FitList
+        count={mine.length}
+        render={(i) => {
+          const g = mine[i]
+          return (
+            <li key={g.recordId} data-testid="my-case">
+              <Link
+                to={`/game/${g.recordId}`}
+                className="flex items-center justify-between rounded-sm border border-border bg-card px-3 py-2 hover:bg-accent"
+              >
+                <span>
+                  Best of {g.data.bestOf} · {g.data.scoreHost}–{g.data.scoreGuest}
+                </span>
+                <span className="text-sm text-muted-foreground">{statusText(g.data)}</span>
+              </Link>
+            </li>
+          )
+        }}
+        more={(hidden) => (
+          <p data-testid="my-cases-more" className="text-xs text-muted-foreground">
+            and {hidden} more
+          </p>
+        )}
+      />
     </section>
   )
 }

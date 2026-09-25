@@ -190,7 +190,8 @@ export default function Navigation() {
       {showAuthModal && <AuthOverlay onClose={() => setShowAuthModal(false)} />}
 
       <Dialog open={howToPlayOpen} onOpenChange={setHowToPlayOpen}>
-        <DialogContent data-testid="how-to-play-panel" className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        {/* R47: the guide shows one section at a time, so the dialog fits without scrolling. */}
+        <DialogContent data-testid="how-to-play-panel" className="sm:max-w-lg">
           <DialogTitle className="font-display text-2xl font-bold">How to play</DialogTitle>
           <HowToPlayContent />
         </DialogContent>

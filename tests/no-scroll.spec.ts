@@ -57,6 +57,9 @@ async function measureNow(page: Page) {
 
 const results: Measurement[] = []
 
+/** The guide's section tabs (R47). */
+const GUIDE_TABS = ['goal', 'cards', 'turn', 'alibis', 'scenes', 'grid', 'winning']
+
 /** Measure the current screen at both sizes; save a 390x660 screenshot when it fails. */
 async function measure(page: Page, screen: string, testInfo: TestInfo) {
   for (const vp of VIEWPORTS) {
@@ -114,12 +117,20 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   await alice.page.goto('/')
   await expect(alice.page.getByTestId('static-landing')).toBeVisible({ timeout: 15_000 })
   await measure(alice.page, 'landing', testInfo)
+  // The guide (R47: one section at a time): every section on the page.
   await alice.page.goto('/how-to-play')
   await expect(alice.page.getByTestId('how-to-play')).toBeVisible({ timeout: 15_000 })
-  await measure(alice.page, 'how-to-play', testInfo)
+  for (const tab of GUIDE_TABS) {
+    await alice.page.getByTestId(`guide-tab-${tab}`).click()
+    await measure(alice.page, `how-to-play: ${tab}`, testInfo)
+    await snap(alice.page, `guide-page-${tab}`, testInfo)
+  }
+  // Home with the test accounts' long case list: only the cases that fit, then "and N more".
   await alice.page.goto('/home')
   await expect(alice.page.getByTestId('join-code-input')).toBeVisible({ timeout: 15_000 })
-  await measure(alice.page, 'home (signed in)', testInfo)
+  await expect(alice.page.getByTestId('my-case').first()).toBeVisible({ timeout: 15_000 })
+  await measure(alice.page, 'home (signed in, long case list)', testInfo)
+  await snap(alice.page, 'home', testInfo)
 
   // Lobby (R47: one question at a time), as host and as guest: question 1, question 2, my picks,
   // locked in; then the host with Start enabled. Answered through the real buttons.
@@ -186,6 +197,17 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   await snap(starter.page, 'dialog-opening', testInfo)
   await starter.page.keyboard.press('Escape')
   await expect(starter.page.getByTestId('opening-narration')).toHaveCount(0, { timeout: 15_000 })
+
+  // The in-game guide dialog, on every section (its longest included).
+  await starter.page.getByTestId('nav-how-to-play').click()
+  await expect(starter.page.getByTestId('how-to-play-panel')).toBeVisible({ timeout: 15_000 })
+  for (const tab of GUIDE_TABS) {
+    await starter.page.getByTestId('how-to-play-panel').getByTestId(`guide-tab-${tab}`).click()
+    await measure(starter.page, `guide dialog: ${tab}`, testInfo)
+    await snap(starter.page, `guide-dialog-${tab}`, testInfo)
+  }
+  await starter.page.keyboard.press('Escape')
+  await expect(starter.page.getByTestId('how-to-play-panel')).toHaveCount(0, { timeout: 15_000 })
 
   await other.page.goto(gameUrl(gameId))
   await expect(other.page.getByTestId('table')).toBeVisible({ timeout: 60_000 })
