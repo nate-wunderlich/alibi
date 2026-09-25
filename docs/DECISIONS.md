@@ -306,6 +306,18 @@ R48. Automated tests never spend credits (D73: the account hit 0 of 500
     keeps the full error list (was the first 3). The architect checks
     app usage at every session start.
 
+R49. When the AI is refused for lack of credits, players are told
+    plainly (D73-D75: the account's free 500 credits ran out; the free
+    plan has no one-time top-up). If any text-AI or speech call for a
+    round fails with an "Insufficient credits" error, the server sets a
+    public flag on that round (aiPaused), and the lobby, table, and
+    reveal show one line in the top strip: "AI features are paused: this
+    demo's credits ran out. You're playing a built-in case." It must fit
+    R47 (no scrolling at 390x660 and 1280x720). The flag is set only by
+    that specific error, never by validation failures, and clears on its
+    own for the next round once credits exist again, since each round
+    starts unflagged.
+
 ## Open
 - App name: alibi unless Nate objects (delegated to the architect).
 - [CLOSED by D8] RBAC expressiveness for owner-only and no-client rows. Yes; see R29.
