@@ -21,6 +21,15 @@ import type { Setting } from '../game/settings'
 
 export const AI_MODEL = 'claude-haiku-4-5'
 
+/**
+ * R49: true when an integration refused a call because the account is out of
+ * credits (the platform says "Insufficient credits"). Nothing else counts:
+ * not validation failures, not network errors.
+ */
+export function isCreditsError(error: string | undefined): boolean {
+  return /insufficient credits/i.test(error ?? '')
+}
+
 /** A reply check; `attempt` (1-based) lets a check relax on the final call (R44). */
 type Check<T> = (value: unknown, attempt: number) => { ok: true; value: T } | { ok: false; errors: string[] }
 
@@ -70,6 +79,8 @@ export interface AskOptions {
    * costs no retry, and a retry never shows the AI a player's name.
    */
   playerNames?: string[]
+  /** R49: told when a call is refused for lack of credits; askForJson then stops (a retry would be refused too). */
+  onCreditsPaused?: () => void
 }
 
 export async function askForJson<T>(
@@ -80,7 +91,7 @@ export async function askForJson<T>(
   maxTokens: number,
   options: AskOptions = {},
 ): Promise<T | null> {
-  const { report, attempts = 2, playerNames = [] } = options
+  const { report, attempts = 2, playerNames = [], onCreditsPaused } = options
   // R38: a retry shows the AI its previous reply and exactly what was wrong with it.
   let messages: Message[] = [{ role: 'user', content: prompt.user }]
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -100,6 +111,10 @@ export async function askForJson<T>(
           })
     if (!result.success) {
       console.warn(`[ai] ${label}: call ${attempt} failed: ${result.error}`)
+      if (isCreditsError(result.error)) {
+        onCreditsPaused?.()
+        break
+      }
       continue
     }
     const reply = replyText(result.data)
@@ -160,9 +175,11 @@ export function askForCase(
     avoidNames?: string[]
     /** R44 (3): the round's complication, which the case must use. */
     twist?: string
+    /** R49: told when the AI is refused for lack of credits. */
+    onCreditsPaused?: () => void
   } = {},
 ): Promise<PresetCase | null> {
-  const { report, avoidNames = [], twist } = options
+  const { report, avoidNames = [], twist, onCreditsPaused } = options
   return askForJson<PresetCase>(
     tools,
     label,
@@ -179,7 +196,7 @@ export function askForCase(
       return checked.ok ? { ok: true, value: checked.case } : checked
     },
     2000,
-    { attempts: CASE_ATTEMPTS, playerNames, report },
+    { attempts: CASE_ATTEMPTS, playerNames, report, onCreditsPaused },
   )
 }
 
@@ -201,6 +218,7 @@ export async function askForAlibis(
   cards: (AlibiCardRef & { description: string })[],
   playerNames: string[],
   report?: AskOptions['report'],
+  onCreditsPaused?: () => void,
 ): Promise<(string | null)[]> {
   const ordered = alibiOrder(cards)
   const kept: (string | null)[] = ordered.map(() => null)
@@ -219,7 +237,7 @@ export async function askForAlibis(
       return { ok: true, value: true }
     },
     1500,
-    { attempts: 2, playerNames, report },
+    { attempts: 2, playerNames, report, onCreditsPaused },
   )
   const written = kept.filter((t) => t !== null).length
   console.info(`[ai] ${label}: ${written} of ${ordered.length} alibis written by the AI; the rest keep their templates`)

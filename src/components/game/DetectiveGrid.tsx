@@ -101,7 +101,7 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
         {KINDS.map((kind) => (
           <tbody key={kind}>
             <tr>
-              <th colSpan={4} className="pt-1 pb-0 text-left font-mono text-[10px] font-normal uppercase tracking-widest text-primary">
+              <th colSpan={4} className="pt-0.5 pb-0 text-left font-mono text-[10px] font-normal uppercase tracking-widest text-primary">
                 {KIND_LABEL[kind]}s
               </th>
             </tr>
@@ -126,7 +126,7 @@ export function DetectiveGrid({ view, round }: { view: GameView; round: Round })
                       const fixed = known[col.id] !== undefined
                       const mark: Mark = fixed ? known[col.id]! : (marks[card.id]?.[col.id] ?? '')
                       return (
-                        <td key={col.id} className="px-0.5 py-px">
+                        <td key={col.id} className="px-0.5 py-0">
                           <button
                             type="button"
                             data-testid="grid-cell"

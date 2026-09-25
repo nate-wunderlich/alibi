@@ -192,6 +192,19 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
   await snap(starter.page, 'tab-play-accuse', testInfo)
   await starter.page.getByRole('button', { name: 'Not yet' }).click()
   await expect(starter.page.getByTestId('guess-builder')).toBeVisible({ timeout: 15_000 })
+
+  // R49: the credits-paused banner, forced on through the dev-only action, on Play and on Grid (the tightest tab).
+  await mustCall(starter.page, 'devForceAiPaused', { roundId, on: true })
+  await expect(starter.page.getByTestId('ai-paused')).toBeVisible({ timeout: 15_000 })
+  await measure(starter.page, 'table: play (on turn, AI paused)', testInfo)
+  await snap(starter.page, 'tab-play-ai-paused', testInfo)
+  await starter.page.getByTestId('tab-grid').click()
+  await expect(starter.page.getByTestId('detective-grid')).toBeVisible({ timeout: 15_000 })
+  await measure(starter.page, 'table: grid (AI paused)', testInfo)
+  await snap(starter.page, 'tab-grid-ai-paused', testInfo)
+  await starter.page.getByTestId('tab-play').click()
+  await mustCall(starter.page, 'devForceAiPaused', { roundId, on: false })
+  await expect(starter.page.getByTestId('ai-paused')).toHaveCount(0, { timeout: 15_000 })
   await starter.page.getByRole('button', { name: 'Read the opening' }).click()
   await expect(starter.page.getByTestId('opening-narration')).toBeVisible({ timeout: 15_000 })
   await snap(starter.page, 'dialog-opening', testInfo)
@@ -278,6 +291,15 @@ test('R47: every screen fits 390x660 and 1280x720 without scrolling', async ({ u
     await measure(alice.page, `reveal: ${step}`, testInfo)
     await snap(alice.page, `reveal-${step}`, testInfo)
   }
+  // R49: the banner on the reveal, forced on, on its fullest steps.
+  await mustCall(alice.page, 'devForceAiPaused', { roundId, on: true })
+  for (const step of ['verdict', 'hands'] as const) {
+    await alice.page.getByTestId(`step-${step}`).click()
+    await expect(alice.page.getByTestId('ai-paused')).toBeVisible({ timeout: 15_000 })
+    await measure(alice.page, `reveal: ${step} (AI paused)`, testInfo)
+    await snap(alice.page, `reveal-${step}-ai-paused`, testInfo)
+  }
+  await mustCall(alice.page, 'devForceAiPaused', { roundId, on: false })
 
   // Series end (R47: steps): round 2 (the other player starts), and they accuse correctly: 2-0.
   await answerMyQuestions(alice.page, accused.nextRoundId, gameId)

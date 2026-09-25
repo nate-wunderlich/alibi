@@ -13,7 +13,8 @@
  * call so the app keeps its own count (FRICTION 9).
  */
 
-import { askForJson, integrationFromCron } from '../actions/ai'
+import { askForJson, integrationFromCron, isCreditsError } from '../actions/ai'
+import { creditsWatch, recordAiPaused } from './aiPaused'
 import {
   containsPlayerName,
   findGraphicTerm,
@@ -128,10 +129,26 @@ async function loadRound(deps: NarrationDeps, roundId: string): Promise<RoundFie
   return rows[0].data
 }
 
+/** R49: thrown by voice() when text-to-speech is refused for lack of credits. */
+class CreditsPaused extends Error {}
+
+/** R49: flag the round as AI-paused (public), so the screens can say so. */
+async function flagPaused(deps: NarrationDeps, roundId: string): Promise<void> {
+  console.warn(`[narration] round ${roundId}: AI paused for credits`)
+  await deps.records.update('rounds', roundId, { aiPaused: 1 })
+}
+
 /** Voice a text with TTS (one paid call, logged) and store it; returns the stored path. */
 async function voice(deps: NarrationDeps, hostId: string, what: string, roundId: string, text: string): Promise<string> {
   console.info(`[narration] ${what} round ${roundId}: tts call`)
-  const spoken = (await deps.integrations.call('speech/text-to-speech', { input: text, ...TTS })) as { audioUrl?: string }
+  let spoken: { audioUrl?: string }
+  try {
+    spoken = (await deps.integrations.call('speech/text-to-speech', { input: text, ...TTS })) as { audioUrl?: string }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    if (isCreditsError(message)) throw new CreditsPaused(message)
+    throw e
+  }
   if (!spoken?.audioUrl) throw new Error('text-to-speech returned no audio')
   const media = await toBase64(spoken.audioUrl)
   return deps.upload(hostId, { base64: media.base64, name: `${what}-${roundId}.mp3`, mimeType: media.mimeType })
@@ -141,7 +158,14 @@ async function voice(deps: NarrationDeps, hostId: string, what: string, roundId:
 export async function runOpening(deps: NarrationDeps, job: { roundId: string; hostId: string }): Promise<void> {
   const round = await loadRound(deps, job.roundId)
   if (round.openingAudioUrl || !round.openingNarration) return
-  const openingAudioUrl = await voice(deps, job.hostId, 'opening', job.roundId, round.openingNarration)
+  let openingAudioUrl: string
+  try {
+    openingAudioUrl = await voice(deps, job.hostId, 'opening', job.roundId, round.openingNarration)
+  } catch (e) {
+    // R49: refused for credits: flag the round and stop (a retry would be refused too).
+    if (e instanceof CreditsPaused) return flagPaused(deps, job.roundId)
+    throw e
+  }
   await deps.records.update('rounds', job.roundId, { openingAudioUrl })
 }
 
@@ -177,6 +201,7 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
       displayName?: string
     }>[]
     const playerNames = players.map((p) => p.data.displayName ?? '').filter((n) => n.trim() !== '')
+    const watch = creditsWatch()
     const written = await askForJson<string>(
       integrationFromCron(deps.integrations),
       `confession for round ${job.roundId}`,
@@ -191,8 +216,10 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
       }),
       (value) => validateConfession(value, culprit.name, playerNames),
       500,
-      { playerNames },
+      { playerNames, onCreditsPaused: watch.onCreditsPaused },
     )
+    // R49: a credits refusal flags the round; a validation failure does not.
+    await recordAiPaused((id, data) => deps.records.update('rounds', id, data), job.roundId, watch)
     if (written) {
       confession = written
       await deps.records.update('rounds', job.roundId, { confession })
@@ -201,6 +228,13 @@ export async function runConfession(deps: NarrationDeps, job: { roundId: string;
     }
   }
 
-  const confessionAudioUrl = await voice(deps, job.hostId, 'confession', job.roundId, confession)
+  let confessionAudioUrl: string
+  try {
+    confessionAudioUrl = await voice(deps, job.hostId, 'confession', job.roundId, confession)
+  } catch (e) {
+    // R49: refused for credits: flag the round and stop (a retry would be refused too).
+    if (e instanceof CreditsPaused) return flagPaused(deps, job.roundId)
+    throw e
+  }
   await deps.records.update('rounds', job.roundId, { confessionAudioUrl })
 }

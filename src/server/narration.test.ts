@@ -107,6 +107,8 @@ function fakeDeps(options: {
   round?: Round
   aiReplies?: (string | Error)[]
   ttsFails?: boolean
+  /** R49: the TTS error message (default 'tts is down'). */
+  ttsError?: string
 }) {
   const round: Round = {
     caseTitle: "The Keeper's Final Watch",
@@ -148,7 +150,7 @@ function fakeDeps(options: {
       call: vi.fn(async (endpoint: string, params: Record<string, unknown> = {}) => {
         calls.push({ endpoint, params })
         if (endpoint === 'speech/text-to-speech') {
-          if (options.ttsFails) throw new Error('tts is down')
+          if (options.ttsFails) throw new Error(options.ttsError ?? 'tts is down')
           return { audioUrl: 'data:audio/mpeg;base64,SUQz', model: 'tts-1', voice: 'fable', response_format: 'mp3', usage: {} }
         }
         const next = aiReplies.shift() ?? new Error('no reply scripted')
@@ -259,3 +261,34 @@ describe('runConfession', () => {
     expect(logs.filter((l) => l.includes('[narration]') && l.includes('tts call'))).toHaveLength(1)
   })
 })
+
+describe('credits-paused (R49)', () => {
+  const credits = 'Integration call speech/text-to-speech failed: Insufficient credits.'
+
+  it('runOpening: a TTS refusal for credits flags the round and does not throw (no pointless retry)', async () => {
+    const f = fakeDeps({ ttsFails: true, ttsError: credits })
+    await expect(runOpening(f.deps, { roundId: 'r1', hostId: 'h1' })).resolves.toBeUndefined()
+    expect(f.updates).toContainEqual({ aiPaused: 1 })
+  })
+
+  it('runOpening: any other TTS error still throws, and does not flag the round', async () => {
+    const f = fakeDeps({ ttsFails: true })
+    await expect(runOpening(f.deps, { roundId: 'r1', hostId: 'h1' })).rejects.toThrow(/tts is down/)
+    expect(f.updates).not.toContainEqual({ aiPaused: 1 })
+  })
+
+  it('runConfession: a text-AI refusal for credits flags the round; the template stands', async () => {
+    const refused = new Error('Integration call anthropic/chat-completion failed: Insufficient credits.')
+    const f = fakeDeps({ aiReplies: [refused, refused], ttsFails: true, ttsError: credits })
+    await expect(runConfession(f.deps, { roundId: 'r1', hostId: 'h1' })).resolves.toBeUndefined()
+    expect(f.updates).toContainEqual({ aiPaused: 1 })
+    expect(f.ai()).toHaveLength(1)
+  })
+
+  it('runConfession: a validation failure does not flag the round', async () => {
+    const f = fakeDeps({ aiReplies: [JSON.stringify({ confession: 'Nobody.' }), JSON.stringify({ confession: 'Still nobody.' })] })
+    await runConfession(f.deps, { roundId: 'r1', hostId: 'h1' })
+    expect(f.updates).not.toContainEqual({ aiPaused: 1 })
+  })
+})
+

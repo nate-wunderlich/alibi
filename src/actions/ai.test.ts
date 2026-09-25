@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ALIBI_RETRY_OVER, askForAlibis, askForCase, askForJson, CASE_ATTEMPTS, type IntegrationCaller } from './ai'
+import { ALIBI_RETRY_OVER, askForAlibis, askForCase, askForJson, CASE_ATTEMPTS, isCreditsError, type IntegrationCaller } from './ai'
 import { PRESET_CASE } from '../game/presetCase'
 import { SETTINGS } from '../game/settings'
 
@@ -214,6 +214,52 @@ describe('askForCase with soft word caps (R45)', () => {
   it('an opening over 750 characters still fails on attempt 3', async () => {
     const { tools } = fakeModel([longScene(140), longScene(140), longScene(140)])
     expect(await askForCase(tools, 'case', setting, [], [], [])).toBeNull()
+  })
+})
+
+describe('credits-paused (R49)', () => {
+  /** A fake integration that always fails with the given error. */
+  const failing = (error: string) => {
+    const calls: unknown[] = []
+    const tools: IntegrationCaller = {
+      integration: vi.fn(async (_endpoint: string, data?: unknown) => {
+        calls.push(data)
+        return { success: false as const, error }
+      }),
+    }
+    return { tools, calls }
+  }
+
+  it('classifies only an "Insufficient credits" error as credits-paused', () => {
+    expect(isCreditsError('Insufficient credits.')).toBe(true)
+    expect(isCreditsError('Integration call anthropic/chat-completion failed: Insufficient credits.')).toBe(true)
+    expect(isCreditsError('The confession does not name the culprit.')).toBe(false)
+    expect(isCreditsError('Network connection lost.')).toBe(false)
+    expect(isCreditsError('')).toBe(false)
+  })
+
+  it('askForJson reports credits-paused to the caller and stops (a refused call is not retried)', async () => {
+    const onCreditsPaused = vi.fn()
+    const { tools, calls } = failing('Insufficient credits.')
+    expect(await askForJson(tools, 'test', prompt, check, 100, { onCreditsPaused })).toBeNull()
+    expect(onCreditsPaused).toHaveBeenCalledTimes(1)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('askForJson does not report credits-paused for validation failures or other errors', async () => {
+    const onCreditsPaused = vi.fn()
+    const { tools } = fakeModel(['{"n": 1}', '{"n": 3}'])
+    expect(await askForJson(tools, 'test', prompt, check, 100, { onCreditsPaused })).toBeNull()
+    const other = failing('Network connection lost.')
+    expect(await askForJson(other.tools, 'test', prompt, check, 100, { onCreditsPaused })).toBeNull()
+    expect(onCreditsPaused).not.toHaveBeenCalled()
+  })
+
+  it('askForCase passes credits-paused through', async () => {
+    const onCreditsPaused = vi.fn()
+    const { tools } = failing('Insufficient credits.')
+    expect(await askForCase(tools, 'case', SETTINGS[1], [], [], [], { onCreditsPaused })).toBeNull()
+    expect(onCreditsPaused).toHaveBeenCalledTimes(1)
   })
 })
 

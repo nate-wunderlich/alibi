@@ -29,6 +29,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useAction } from '@/lib/actions'
 import type { CardKind } from '../../game/rules'
+import { AiPausedBanner } from './AiPausedBanner'
 import { AlibiEntry } from './AlibiEntry'
 import { CardChip, CardView, InlineError, KIND_LABEL, KINDS, SuspectFace } from './CardView'
 import { DetectiveGrid } from './DetectiveGrid'
@@ -122,6 +123,7 @@ function TopStrip({ view, round, mustChoose }: { view: GameView; round: Round; m
   return (
     <header className="shrink-0 space-y-1 border-b border-border pb-2">
       <Scoreboard view={view} compact />
+      <AiPausedBanner paused={round.aiPaused === 1} />
       <h1 data-testid="case-title" className="truncate font-display text-xl font-bold leading-tight" title={round.caseTitle}>
         {round.caseTitle}
       </h1>

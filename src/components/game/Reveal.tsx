@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { useAction } from '@/lib/actions'
 import type { Triple } from '../../game/rules'
 import { SETTINGS } from '../../game/settings'
+import { AiPausedBanner } from './AiPausedBanner'
 import { CardChip, InlineError } from './CardView'
 import { useNarration, type Narration } from './NarrationAudio'
 import { answeredFlags, QuestionsPanel, WritingCase } from './QuestionsPanel'
@@ -155,10 +156,11 @@ function useRoundSteps(view: GameView, round: Round) {
 }
 
 /** The compact top strip: score, and the case (or series) heading. */
-function TopStrip({ view, kicker, title }: { view: GameView; kicker: string; title: string }) {
+function TopStrip({ view, kicker, title, paused }: { view: GameView; kicker: string; title: string; paused: boolean }) {
   return (
     <header className="shrink-0 space-y-1 border-b border-border pb-2">
       <Scoreboard view={view} compact />
+      <AiPausedBanner paused={paused} />
       <p className="truncate font-mono text-[10px] uppercase tracking-widest text-muted-foreground">{kicker}</p>
       <h1 className="truncate font-display text-xl font-bold leading-tight" title={title}>
         {title}
@@ -186,7 +188,12 @@ export function Reveal({ view, round }: { view: GameView; round: Round }) {
 
   return (
     <section data-testid="reveal" className="flex min-h-0 flex-1 flex-col gap-2">
-      <TopStrip view={view} kicker={`Case ${round.number} · ${setting?.name ?? ''} · closed`} title={round.caseTitle} />
+      <TopStrip
+        view={view}
+        kicker={`Case ${round.number} · ${setting?.name ?? ''} · closed`}
+        title={round.caseTitle}
+        paused={round.aiPaused === 1 || prep?.aiPaused === 1}
+      />
       {narration.element}
       <div role="tabpanel" data-testid={`steppanel-${step}`} className="flex min-h-0 flex-1 flex-col">
         {step === 'verdict' && steps.verdict}
@@ -244,7 +251,7 @@ export function SeriesEnd({ view }: { view: GameView }) {
 
   return (
     <section data-testid="series-end" className="flex min-h-0 flex-1 flex-col gap-2">
-      <TopStrip view={view} kicker="Series closed" title={round?.caseTitle ?? ''} />
+      <TopStrip view={view} kicker="Series closed" title={round?.caseTitle ?? ''} paused={round?.aiPaused === 1} />
       {narration.element}
       <div role="tabpanel" data-testid={`steppanel-${step}`} className="flex min-h-0 flex-1 flex-col">
         {step === 'result' && (

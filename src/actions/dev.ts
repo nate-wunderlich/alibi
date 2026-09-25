@@ -9,7 +9,7 @@ import type { ActionHandler } from 'deepspace/worker'
 import type { Env } from '../../worker'
 import { SETTINGS } from '../game/settings'
 import { runSample } from '../server/samples'
-import { action, refuse, textParam } from './helpers'
+import { action, loadGame, loadRound, must, refuse, requireSeat, textParam } from './helpers'
 
 const devSamples = action(async ({ params, tools }) => {
   if (!import.meta.env.DEV) refuse('Samples run only on the local dev server.')
@@ -22,4 +22,17 @@ const devSamples = action(async ({ params, tools }) => {
   return runSample(tools, setting, guardNames, avoidNames)
 })
 
-export const devActions: Record<string, ActionHandler<Env>> = { devSamples }
+/**
+ * R49: turn a round's aiPaused flag on or off, so the no-scroll spec can
+ * measure the banner. Dev only (refuses in a production build), and only for
+ * a player of that game.
+ */
+const devForceAiPaused = action(async ({ userId, params, tools }) => {
+  if (!import.meta.env.DEV) refuse('Dev only.')
+  const round = await loadRound(tools, textParam(params, 'roundId'))
+  requireSeat(await loadGame(tools, round.gameId), userId)
+  must(await tools.update('rounds', round.id, { aiPaused: params.on === false ? 0 : 1 }), 'Setting aiPaused')
+  return { roundId: round.id }
+})
+
+export const devActions: Record<string, ActionHandler<Env>> = { devSamples, devForceAiPaused }

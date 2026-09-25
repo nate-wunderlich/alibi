@@ -16,6 +16,7 @@ import { askForAlibis, integrationFromCron } from '../actions/ai'
 import { alibiOrder, templateAlibi } from '../game/alibis'
 import type { CardKind } from '../game/rules'
 import { SETTINGS } from '../game/settings'
+import { creditsWatch, recordAiPaused } from './aiPaused'
 import type { PortraitDeps } from './portraits'
 
 /** Records and integrations through the cron context, as the other media jobs have them. */
@@ -57,14 +58,18 @@ export async function runAlibis(deps: AlibiDeps, job: { roundId: string }): Prom
   }>[]
   const playerNames = players.map((p) => p.data.displayName ?? '').filter((n) => n.trim() !== '')
   const ordered = alibiOrder(cards.map((c) => ({ id: c.recordId, ...c.data })))
-  // R43: card by card. null keeps that card's template.
+  // R43: card by card. null keeps that card's template. R49: a credits refusal flags the round.
+  const watch = creditsWatch()
   const written = await askForAlibis(
     integrationFromCron(deps.integrations),
     `alibis for round ${job.roundId}`,
     setting,
     ordered,
     playerNames,
+    undefined,
+    watch.onCreditsPaused,
   )
+  await recordAiPaused((id, data) => deps.records.update('rounds', id, data), job.roundId, watch)
 
   let count = 0
   for (const [i, card] of ordered.entries()) {

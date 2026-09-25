@@ -7,6 +7,7 @@
 
 import { Button } from '@/components/ui'
 import { useAction } from '@/lib/actions'
+import { AiPausedBanner } from './AiPausedBanner'
 import { InlineError } from './CardView'
 import { answeredFlags, QuestionsPanel, WritingCase } from './QuestionsPanel'
 import type { GameView } from './useGameData'
@@ -36,6 +37,7 @@ export function Lobby({ view }: { view: GameView }) {
             </span>
           </p>
         )}
+        <AiPausedBanner paused={prepRound?.aiPaused === 1} />
         <ul className="flex flex-wrap gap-1.5">
           {players.map((p) => (
             <li

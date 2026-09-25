@@ -111,6 +111,8 @@ export const roundsSchema: CollectionSchema = {
     text('revealedAlibis'),
     /** R44: the round's complication, drawn by code; flavor, not a clue. */
     text('twist'),
+    /** R49: 1 once any text-AI or speech call for this round was refused for lack of credits. */
+    number('aiPaused'),
   ],
   permissions: signedInReadOnly,
 }

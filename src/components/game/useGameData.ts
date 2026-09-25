@@ -60,6 +60,8 @@ export interface RoundData {
   revealedAlibis: string
   /** R44: the round's complication (flavor, not a clue). */
   twist: string
+  /** R49: 1 when an AI or speech call for this round was refused for lack of credits. */
+  aiPaused?: number
 }
 
 /** R41: an alibi drawn during play: the card it clears and why. */

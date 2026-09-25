@@ -21,6 +21,7 @@ import { fallbackQuestions, splitForPlayers, validateQuestions, type QuestionSet
 import { deal, starterForRound, type Card, type Player } from '../game/rules'
 import { pickSetting, SETTINGS, type SettingPlay } from '../game/settings'
 import { portraitsEnabled } from '../server/portraits'
+import { creditsWatch, recordAiPaused } from '../server/aiPaused'
 import { askForCase, askForJson } from './ai'
 import { loadRound, must, refuse, userInSeat, type Game } from './helpers'
 
@@ -145,12 +146,14 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
       turnsPlayed: 0,
       revealedAlibis: '[]',
       twist: '',
+      aiPaused: 0,
     }),
     `Preparing round ${number}`,
   )
 
   // R39 guard: whoever has joined so far (the guest may not have joined round 1 yet).
   const questionGuard = await guardNames(tools, game)
+  const watch = creditsWatch()
   const fromAi = await askForJson<QuestionSet>(
     tools,
     `questions for round ${number} (${setting.id})`,
@@ -160,8 +163,10 @@ export async function prepareRound(tools: ActionTools, game: Game, number: numbe
       return checked.ok ? { ok: true, value: splitForPlayers(checked.questions) } : checked
     },
     900,
-    { playerNames: questionGuard },
+    { playerNames: questionGuard, onCreditsPaused: watch.onCreditsPaused },
   )
+  // R49: a credits refusal flags the round; the fallback questions still work.
+  await recordAiPaused((id, data) => tools.update('rounds', id, data), roundId, watch)
   const set = fromAi ?? fallbackQuestions(Math.random)
 
   let n = 0
@@ -218,6 +223,7 @@ async function writeCase(
   answers: AnsweredQuestion[],
   playerNames: string[],
   twist: string,
+  roundId: string,
 ) {
   const setting = SETTINGS.find((s) => s.id === settingId)
   if (!setting) return PRESET_CASE
@@ -226,10 +232,14 @@ async function writeCase(
     .filter((r) => Number(r.data.number) < number && String(r.data.caseTitle) !== '')
     .map((r) => String(r.data.caseTitle))
   const avoidNames = await namesToAvoid(tools, game, playerNames)
+  const watch = creditsWatch()
   const generated = await askForCase(tools, `case for round ${number} (${setting.id})`, setting, answers, earlierTitles, playerNames, {
     avoidNames,
     twist,
+    onCreditsPaused: watch.onCreditsPaused,
   })
+  // R49: a credits refusal flags the round (the preset case is used); a validation failure does not.
+  await recordAiPaused((id, data) => tools.update('rounds', id, data), roundId, watch)
   if (generated) {
     // Public data only (the cast, not the solution), for tracing what the AI wrote.
     console.info(`[ai] case for round ${number}: "${generated.title}" | ${generated.cards.map((c) => c.name).join(' | ')}`)
@@ -262,7 +272,7 @@ export async function openRound(tools: ActionTools, env: Env, game: Game, roundI
     // R44 (3): the round's complication, drawn by code and stored on the round (flavor, not a clue).
     const twist = drawTwist(Math.random)
     must(await tools.update('rounds', roundId, { twist }), 'Choosing the twist')
-    const theCase = await writeCase(tools, game, round.settingId, round.number, all, names, twist)
+    const theCase = await writeCase(tools, game, round.settingId, round.number, all, names, twist, roundId)
     await layOutAndDeal(tools, game, roundId, round.number, theCase)
   } catch (e) {
     await tools.update('rounds', roundId, { status: 'answering' })
